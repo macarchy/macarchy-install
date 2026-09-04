@@ -8,6 +8,12 @@ FAIL=0
 ok()   { printf '  \033[32mok\033[0m   %s\n' "$*"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mMISS\033[0m %s\n' "$*"; FAIL=$((FAIL+1)); }
 have() { [[ -x $HOME/.local/bin/$1 ]] && ok "~/.local/bin/$1" || bad "~/.local/bin/$1"; }
+SKIP=0
+# Off this laptop there is no macsmc battery and no Touch Bar panel, and CI
+# proves install.sh on a plain aarch64 runner. Counting those checks missing
+# would cry wolf; printing them ok would be a lie. Gated on an env var CI sets
+# and the laptop never does, so a real MISS here stays a MISS.
+skip() { printf '  \033[33mskip\033[0m %s\n' "$*"; SKIP=$((SKIP+1)); }
 
 echo "binaries"
 for b in macarchy-dfr omarchy-als omarchy-battery-limit omarchy-dock \
@@ -31,8 +37,13 @@ systemctl --user is-enabled -q macarchy-dfr.service 2>/dev/null \
 systemctl --user is-active -q omarchy-auto-appearance.timer 2>/dev/null \
 	&& ok "auto-appearance timer" || bad "auto-appearance timer"
 b=/sys/class/power_supply/macsmc-battery/charge_control_end_threshold
-[[ -r $b ]] && ok "charge threshold readable ($(cat "$b" 2>/dev/null)%)" \
-	|| bad "charge threshold ($b)"
+if [[ -n ${MACARCHY_NO_HARDWARE:-} ]]; then
+	skip "charge threshold (${MACARCHY_NO_HARDWARE})"
+elif [[ -r $b ]]; then
+	ok "charge threshold readable ($(cat "$b" 2>/dev/null)%)"
+else
+	bad "charge threshold ($b)"
+fi
 
 echo "hyprland wiring"
 BIND="$HOME/.config/hypr/bindings.lua"
@@ -61,7 +72,9 @@ if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
 	pgrep -f "omarchy-als daemon" >/dev/null && ok "omarchy-als"   || bad "omarchy-als not running"
 	pgrep -f "omarchy-pinch"      >/dev/null && ok "omarchy-pinch" || bad "omarchy-pinch not running"
 	omarchy-aquarium-toggle status >/dev/null 2>&1 && ok "aquarium" || bad "aquarium not running (SUPER+ALT+A, or it was left off)"
+else
+	skip "running-now checks (no Hyprland session)"
 fi
 
-printf '\n%d ok, %d missing\n' "$PASS" "$FAIL"
+printf '\n%d ok, %d missing, %d skipped\n' "$PASS" "$FAIL" "$SKIP"
 exit $((FAIL > 0))
