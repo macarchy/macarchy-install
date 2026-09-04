@@ -60,6 +60,12 @@ systemctl --user show -p Version --value >/dev/null 2>&1 || {
 	exit 1
 }
 
+# On the way out, whatever the exit status, say WHY every failed user unit failed.
+# It has to be a trap: install.sh runs doctor.sh ITSELF, so a MISS reds the run from
+# inside the `|| exit 1` below and there is no "after install, before doctor" moment
+# to hook. `|| true` and the saved status keep the diagnostics from deciding the run.
+trap 'rc=$?; bash tests/dump-failed-units.sh || true; exit $rc' EXIT
+
 ./install.sh || exit 1   # it runs doctor.sh itself at the end, so a MISS reds here
 sha256sum "$HOME/.config/hypr/autostart.lua" "$HOME/.config/hypr/bindings.lua" >"$MACARCHY_DIR/lua.sha"
 
