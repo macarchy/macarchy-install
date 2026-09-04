@@ -63,9 +63,12 @@ systemctl --user show -p Version --value >/dev/null 2>&1 || {
 ./install.sh || exit 1   # it runs doctor.sh itself at the end, so a MISS reds here
 sha256sum "$HOME/.config/hypr/autostart.lua" "$HOME/.config/hypr/bindings.lua" >"$MACARCHY_DIR/lua.sha"
 
-# The daemon cannot run without a Touch Bar, so it spends its restart budget;
-# a spent budget makes the second install's `systemctl restart` fail for a
-# reason that has nothing to do with the install. No-op if it never started.
+# No-op on a GitHub runner: `id -nG` has no `video` until the next login, so
+# macarchy-dfr/install.sh takes its "log out and back in" branch and never
+# starts the daemon. Kept for the other case this script serves -- a throwaway
+# Arch box re-run after that login, where the daemon dies for want of a Touch
+# Bar, spends StartLimitBurst=10 within StartLimitIntervalSec=120, and makes the
+# second install's `systemctl restart` fail under `set -e`.
 systemctl --user stop macarchy-dfr.service 2>/dev/null
 systemctl --user reset-failed macarchy-dfr.service 2>/dev/null
 

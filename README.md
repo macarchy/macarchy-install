@@ -47,13 +47,13 @@ Hyprland wiring, themes, and (inside a session) the running daemons.
 
 ### Proved in CI
 
-Every push and PR runs `tests/clean-machine.sh` on a clean `ubuntu-24.04-arm`
-runner — a real aarch64 machine, so the arch gate passes without a bypass. It
-runs `install.sh` **twice**, then `doctor.sh`, then a Lua syntax check on the
-appended blocks. That proves the `~/.local/bin` binaries land, the udev rules
-and the uinput module-load are installed, tiny-dfr is masked, the systemd user
-units enable, the Hyprland wiring lands exactly once, the themes sync, the
-theme hook installs, and the aquarium C code builds.
+Every pull request, and every push to `main`, runs `tests/clean-machine.sh` on
+a clean `ubuntu-24.04-arm` runner — a real aarch64 machine, so the arch gate
+passes without a bypass. It runs `install.sh` **twice**, then `doctor.sh`, then
+a Lua syntax check on the appended blocks. That proves the `~/.local/bin`
+binaries land, the udev rules and the uinput module-load are installed, tiny-dfr
+is masked, the systemd user units enable, the Hyprland wiring lands exactly
+once, the themes sync, the theme hook installs, and the aquarium C code builds.
 
 What a clean-machine run can **never** prove, and only this laptop can:
 
