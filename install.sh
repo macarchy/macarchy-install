@@ -247,6 +247,10 @@ mkdir -p "$HOME/.config/systemd/user"
 install -m644 systemd/macarchy-failed@.service "$HOME/.config/systemd/user/" \
 	&& note "macarchy-failed@.service in place before anything can name it" \
 	|| warn "could not install the failure notifier template"
+# Not left to systemd's unit-directory mtime rescan: it is reliable in practice,
+# but the whole point of this block is an ordering GUARANTEE, and one reload makes
+# it hold unconditionally. The doctor step further down does the same after its own.
+systemctl --user daemon-reload 2>/dev/null || true
 
 say "Fetching the macarchy repos into $MACARCHY_DIR"
 mkdir -p "$MACARCHY_DIR"

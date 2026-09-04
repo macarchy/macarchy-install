@@ -38,23 +38,55 @@ for stub in pgrep omarchy-aquarium-toggle systemctl journalctl omarchy; do
 done
 chmod +x "$TMP/bin"/*
 
-# A unit that names the notifier, with no template beside it.
-printf '[Unit]\nOnFailure=macarchy-failed@%%n.service\n' > "$UNITS/some-daemon.service"
+T="$UNITS/macarchy-failed@.service"
+
+# A macarchy unit that names the notifier, with no template beside it.
+printf '[Unit]\nOnFailure=macarchy-failed@%%n.service\n' > "$UNITS/macarchy-probe.service"
 out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
 check "a named-but-absent notifier is a MISS" grep -q 'MISS.*failure notifier' <<<"$out"
-check "and it says which unit needs it"       grep -q 'some-daemon' <<<"$out"
+check "and it says which unit needs it"       grep -q 'macarchy-probe' <<<"$out"
 
 # Same unit, template present.
-printf '[Unit]\nDescription=notifier\n' > "$UNITS/macarchy-failed@.service"
+printf '[Unit]\nDescription=notifier\n' > "$T"
 out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
 check "reachable notifier is ok"              grep -q 'ok.*failure notifier' <<<"$out"
-check "and it says what it verified"          grep -qE 'failure notifier \(1 unit' <<<"$out"
+check "and it says what it verified"          grep -qE 'failure notifier \(1 macarchy unit' <<<"$out"
 
-# Nothing declares OnFailure= at all: say so rather than passing silently.
-rm -f "$UNITS/some-daemon.service"
+# A SPACE-SEPARATED list: systemd allows it, and stopping at the first target is
+# the silent pass this check exists to end.
+printf '[Unit]\nOnFailure=macarchy-failed@%%n.service other-notify@%%n.service\n' > "$UNITS/macarchy-probe.service"
 out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
-check "no declarations: says so"              grep -q 'failure notifier (nothing declares' <<<"$out"
-check "no declarations: not a MISS"           bash -c '! grep -q "MISS.*failure notifier" <<<"$1"' _ "$out"
+check "the second target is checked too"      grep -q 'other-notify@.service needed by' <<<"$out"
+
+# A THIRD-PARTY unit is none of macarchy's business: jarvis, voxtype and aikit-sync
+# all live in this directory, and blaming macarchy-install for a template THEY do
+# not ship is a false MISS that reds CI and names the wrong installer.
+printf '[Unit]\nOnFailure=macarchy-failed@%%n.service\n' > "$UNITS/macarchy-probe.service"
+printf '[Unit]\nOnFailure=somebody-elses@%%n.service\n' > "$UNITS/voxtype.service"
+out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
+check "a third-party unit is not our MISS"    bash -c '! grep -q "somebody-elses" <<<"$1"' _ "$out"
+check "and ours still reports ok"             grep -q 'ok.*failure notifier' <<<"$out"
+rm -f "$UNITS/voxtype.service"
+
+# A TIMER declaring it counts: this suite ships macarchy-*.timer units.
+printf '[Unit]\nOnFailure=macarchy-failed@%%n.service\n' > "$UNITS/macarchy-probe.timer"
+out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
+check "a .timer is scanned too"               grep -qE 'failure notifier \(2 macarchy units' <<<"$out"
+rm -f "$UNITS/macarchy-probe.timer"
+
+# Leading whitespace is legal in a unit file.
+printf '[Unit]\n   OnFailure=macarchy-failed@%%n.service\n' > "$UNITS/macarchy-probe.service"
+out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
+check "indented OnFailure= is parsed"         grep -qE 'failure notifier \(1 macarchy unit' <<<"$out"
+
+# Nothing declares it -- but the template's own absence is STILL a MISS. Otherwise a
+# run whose repo clones failed leaves no units and the check congratulates itself.
+rm -f "$UNITS/macarchy-probe.service"
+out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
+check "no declarations, template present: ok" grep -q 'no macarchy unit declares' <<<"$out"
+rm -f "$T"
+out=$(WAYLAND_DISPLAY= ./doctor.sh 2>&1)
+check "no declarations, no template: MISS"    grep -q 'MISS.*is not installed' <<<"$out"
 
 (( fails == 0 )) && echo "all ok" || echo "$fails failed"
 exit $(( fails > 0 ))
