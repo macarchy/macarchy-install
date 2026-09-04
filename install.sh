@@ -1,8 +1,8 @@
 #!/bin/bash
 # macarchy-install — one command from a fresh Omarchy-on-Asahi machine to the
-# full macarchy setup: the omarchy-mac suite (Touch Bar, auto-brightness,
-# battery limit, dock, gestures, Cmd keys), the aquarium background, and the
-# apple-glass themes.
+# full macarchy setup: the omarchy-mac suite (auto-brightness, battery limit,
+# dock, gestures, Cmd keys), macarchy-dfr (the Touch Bar), the aquarium
+# background, and the apple-glass themes.
 #
 # Idempotent: every step either converges or is skipped with a note, so
 # re-running after a partial failure (or to pick up repo updates) is the
@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 
 MACARCHY_DIR="${MACARCHY_DIR:-$HOME/Work}"
 GH=https://github.com/macarchy
-REPOS=(omarchy-mac omarchy-aquarium apple-glass apple-glass-light)
+REPOS=(omarchy-mac macarchy-dfr omarchy-aquarium apple-glass apple-glass-light)
 
 FAILURES=0
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -39,8 +39,11 @@ say "Installing packages (pacman --needed)"
 sudo pacman -S --needed --noconfirm \
 	git base-devel pkgconf \
 	wayland wayland-protocols mesa python \
-	brightnessctl libinput tiny-dfr rsync \
+	brightnessctl libinput rsync \
+	tiny-dfr \
 	|| warn "pacman failed; later steps may miss tools"
+# tiny-dfr is installed but MASKED: macarchy-dfr owns the Touch Bar now, and
+# tiny-dfr is only what `macarchy-dfr/install.sh --uninstall` falls back to.
 
 # ----------------------------------------------------------------- repos
 
@@ -70,6 +73,18 @@ if [[ -x $MACARCHY_DIR/omarchy-mac/install.sh ]]; then
 	(cd "$MACARCHY_DIR/omarchy-mac" && ./install.sh --udev) || warn "omarchy-mac install failed"
 else
 	warn "omarchy-mac/install.sh missing"
+fi
+
+# ---------------------------------------------------------- macarchy-dfr
+
+say "Installing macarchy-dfr (the Touch Bar daemon)"
+if [[ -x $MACARCHY_DIR/macarchy-dfr/install.sh ]]; then
+	# Its own installer owns the whole story: packages, the icon font, the
+	# video group, the uinput udev rule and modules-load, masking tiny-dfr,
+	# the user unit, and migrating any old omarchy-dfr Hyprland wiring.
+	(cd "$MACARCHY_DIR/macarchy-dfr" && ./install.sh) || warn "macarchy-dfr install failed"
+else
+	warn "macarchy-dfr/install.sh missing"
 fi
 
 # -------------------------------------------------------------- aquarium
@@ -107,10 +122,12 @@ append_once() {   # append_once <file> <guard-string> <<'EOF' ... EOF
 
 say "Wiring autostart.lua"
 AUTO="$HOME/.config/hypr/autostart.lua"
-append_once "$AUTO" "omarchy-dfr daemon" <<'LUA'
+append_once "$AUTO" "macarchy-dfr.service" <<'LUA'
 
--- Context-aware Touch Bar: follows the focused window and rewrites tiny-dfr's config.
-o.exec_on_start("omarchy-dfr daemon")
+-- The Touch Bar (macarchy-dfr): a systemd user service, so it restarts on
+-- failure and logs to the journal. The unit is enabled too — this line only
+-- makes the session-start explicit, and starting it twice is a no-op.
+o.exec_on_start("systemctl --user start macarchy-dfr.service")
 LUA
 append_once "$AUTO" "omarchy-dock" <<'LUA'
 
@@ -130,25 +147,18 @@ append_once "$AUTO" "omarchy-pinch" <<'LUA'
 -- libinput-tools is installed.
 o.exec_on_start("omarchy-pinch")
 LUA
+append_once "$AUTO" "omarchy-aquarium-toggle restore" <<'LUA'
+
+-- The animated aquarium background, put back the way it was left: "restore"
+-- starts it unless it was deliberately toggled off in an earlier session.
+o.exec_on_start("omarchy-aquarium-toggle restore")
+LUA
 
 say "Wiring bindings.lua"
 BIND="$HOME/.config/hypr/bindings.lua"
-append_once "$BIND" "omarchy-dfr press" <<'LUA'
-
--- ── Touch Bar (omarchy-dfr) ────────────────────────────────────────────────
--- tiny-dfr can only emit key codes, so command buttons are drawn with the
--- otherwise-unused F13–F24 and routed back here. The daemon holds the slot
--- map, which is what lets every layout reuse the same twelve codes.
--- Edit the bar itself in ~/.config/omarchy-dfr/layouts.toml.
--- Bind by raw keycode, not keysym: this keymap (pc+us) assigns no keysyms to
--- F13-F24, so a bind on the name "F13" would never match even though tiny-dfr
--- emits the key correctly. X keycode = evdev code + 8, and KEY_F13 is 183.
--- Fire on RELEASE, not press: tiny-dfr redrawing under a held finger panics it.
-for slot = 1, 12 do
-  o.bind("code:" .. (slot + 190), "Touch Bar slot " .. slot,
-    "omarchy-dfr press " .. slot, { release = true })
-end
-LUA
+# No Touch Bar binds any more: the old F13-F24 bridge existed because tiny-dfr
+# could only emit key codes. macarchy-dfr draws the bar itself, runs the
+# commands itself, and types through its own uinput device.
 append_once "$BIND" "omarchy-aquarium-toggle" <<'LUA'
 
 -- ── Aquarium background ───────────────────────────────────────────────────
@@ -196,10 +206,10 @@ fi
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
 	say "Reloading Hyprland and starting what can start now"
 	hyprctl reload >/dev/null && note "hyprctl reload"
-	pgrep -f "omarchy-dfr daemon" >/dev/null || { setsid omarchy-dfr daemon >/dev/null 2>&1 & note "started omarchy-dfr"; }
+	systemctl --user start macarchy-dfr.service 2>/dev/null && note "macarchy-dfr started" || warn "macarchy-dfr did not start (journalctl --user -u macarchy-dfr)"
 	pgrep -f "omarchy-als daemon" >/dev/null || { setsid omarchy-als daemon >/dev/null 2>&1 & note "started omarchy-als"; }
 	pgrep -f omarchy-pinch >/dev/null || { setsid omarchy-pinch >/dev/null 2>&1 & note "started omarchy-pinch"; }
-	omarchy-aquarium-toggle on && note "aquarium on"
+	omarchy-aquarium-toggle restore && note "aquarium restored to its remembered state"
 else
 	note "no Hyprland session: daemons start on next login (autostart.lua)"
 fi

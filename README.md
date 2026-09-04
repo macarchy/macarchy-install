@@ -14,10 +14,11 @@ Or, with the repo already cloned:
 
 | Piece | From | What you get |
 |---|---|---|
-| [omarchy-mac](https://github.com/macarchy/omarchy-mac) | `install.sh --udev` | Context-aware Touch Bar (with its icons in `/etc/tiny-dfr`), ambient-light auto-brightness, 80% battery charge limit + udev rule, macOS dock, 4-finger pinch gestures, CTRL+scroll screen zoom, Cmd-key grammar, app switcher, light/dark auto-appearance timer |
+| [omarchy-mac](https://github.com/macarchy/omarchy-mac) | `install.sh --udev` | Ambient-light auto-brightness, 80% battery charge limit + udev rule, macOS dock, 4-finger pinch gestures, CTRL+scroll screen zoom, Cmd-key grammar, app switcher, light/dark auto-appearance timer |
+| [macarchy-dfr](https://github.com/macarchy/macarchy-dfr) | `install.sh` | The Touch Bar, drawn by us: a systemd **user** service that owns the panel over DRM and its touch surface over evdev, with tiny-dfr masked out of the way |
 | [omarchy-aquarium](https://github.com/macarchy/omarchy-aquarium) | `make install` | Animated GLSL underwater background (SUPER+ALT+A), theme-set hook, notification startle watcher |
 | [apple-glass](https://github.com/macarchy/apple-glass) / [-light](https://github.com/macarchy/apple-glass-light) | rsync into `~/.config/omarchy/themes` | The glass themes, tuned against the aquarium |
-| Hyprland wiring | guarded appends | Touch Bar slot binds, aquarium bind, zoom binds, daemon autostarts in `~/.config/hypr/{bindings,autostart}.lua` |
+| Hyprland wiring | guarded appends | Aquarium bind, zoom binds, daemon autostarts in `~/.config/hypr/{bindings,autostart}.lua` (no Touch Bar binds: macarchy-dfr runs its own commands) |
 
 ## Idempotent by design
 
@@ -39,15 +40,16 @@ intended workflow.
 
     ./doctor.sh
 
-Read-only health check: binaries, udev rule, tiny-dfr service and icons,
-timer, Hyprland wiring, themes, and (inside a session) the running daemons.
+Read-only health check: binaries, udev rules, the uinput module-load,
+tiny-dfr masked and the macarchy-dfr unit enabled, the auto-appearance timer,
+Hyprland wiring, themes, and (inside a session) the running daemons.
 `install.sh` runs it at the end.
 
 ## Requirements
 
 - Apple Silicon Mac on Asahi Linux (`linux-asahi`, aarch64)
 - Omarchy installed
-- sudo (udev rule, Touch Bar icons, packages)
+- sudo / polkit (udev rules, packages, masking tiny-dfr)
 
 Machines that aren't Touch Bar Macs still get everything else: the Touch Bar
 pieces install but idle without the hardware.
