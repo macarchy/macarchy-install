@@ -275,6 +275,25 @@ fi
 
 # Ordered before the themes on purpose: its installer only seeds a config when
 # there is none, and the wallpapers it names are the ones apple-glass ships.
+# Before macos-dynamic-wallpaper, not with the themes further down: that step
+# STARTS the unit, and a oneshot that fails once stays failed. It reads
+# ~/.config/omarchy/backgrounds/<theme>/, which only `omarchy theme set` ever
+# populates -- so on a machine without Omarchy yet (and on CI, where there never
+# is one) the theme's own wallpapers were nowhere the tool could find them and it
+# failed on every tick. #9. The theme SYNC stays late; it needs omarchy, this does
+# not -- these are plain files.
+#
+# --ignore-existing, NEVER --delete: this directory is also where a user keeps
+# wallpapers they added themselves, and the point is to add what is missing
+# without touching what is theirs.
+say "Making the themes' wallpapers available to macos-dynamic-wallpaper"
+for t in apple-glass apple-glass-light; do
+	[[ -d $MACARCHY_DIR/$t/backgrounds ]] || continue
+	mkdir -p "$HOME/.config/omarchy/backgrounds/$t"
+	rsync -a --ignore-existing "$MACARCHY_DIR/$t/backgrounds/" "$HOME/.config/omarchy/backgrounds/$t/" \
+		&& note "$t wallpapers in place" || warn "$t wallpapers could not be copied"
+done
+
 say "Installing macos-dynamic-wallpaper (time-of-day backgrounds)"
 if [[ -x $MACARCHY_DIR/macos-dynamic-wallpaper/install.sh ]]; then
 	(cd "$MACARCHY_DIR/macos-dynamic-wallpaper" && ./install.sh) \
@@ -382,20 +401,6 @@ for t in apple-glass apple-glass-light; do
 		mkdir -p "$dst"
 		rsync -a --delete --exclude .git "$src/" "$dst/"
 		note "$t synced to ~/.config/omarchy/themes"
-		# macos-dynamic-wallpaper reads ~/.config/omarchy/backgrounds/<theme>/,
-		# which only `omarchy theme set` ever populates -- so on a machine where
-		# Omarchy is not installed yet (and on CI, where it never is) the theme's
-		# own wallpapers are nowhere the tool can find them, and its unit failed on
-		# every tick. #9.
-		#
-		# --ignore-existing, NEVER --delete: this directory is also where a user
-		# keeps wallpapers they added themselves, and the whole point is to add
-		# what is missing without touching what is theirs.
-		if [[ -d $src/backgrounds ]]; then
-			mkdir -p "$HOME/.config/omarchy/backgrounds/$t"
-			rsync -a --ignore-existing "$src/backgrounds/" "$HOME/.config/omarchy/backgrounds/$t/"
-			note "$t wallpapers available to macos-dynamic-wallpaper"
-		fi
 	else
 		warn "$t repo missing"
 	fi
