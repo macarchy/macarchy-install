@@ -275,23 +275,22 @@ fi
 
 # Ordered before the themes on purpose: its installer only seeds a config when
 # there is none, and the wallpapers it names are the ones apple-glass ships.
-# Before macos-dynamic-wallpaper, not with the themes further down: that step
-# STARTS the unit, and a oneshot that fails once stays failed. It reads
-# ~/.config/omarchy/backgrounds/<theme>/, which only `omarchy theme set` ever
-# populates -- so on a machine without Omarchy yet (and on CI, where there never
-# is one) the theme's own wallpapers were nowhere the tool could find them and it
-# failed on every tick. #9. The theme SYNC stays late; it needs omarchy, this does
-# not -- these are plain files.
-#
-# --ignore-existing, NEVER --delete: this directory is also where a user keeps
-# wallpapers they added themselves, and the point is to add what is missing
-# without touching what is theirs.
-say "Making the themes' wallpapers available to macos-dynamic-wallpaper"
+# Moved ahead of macos-dynamic-wallpaper: that step STARTS its unit, and the unit
+# reads the theme's wallpapers out of ~/.config/omarchy/themes/<t>/backgrounds/
+# (macos-dynamic-wallpaper#5). A oneshot that fails once stays failed, so the
+# files have to be on disk BEFORE it first runs. This half needs no omarchy --
+# it is an rsync; the `omarchy theme set` half stays where it was, further down.
+say "Installing the apple-glass themes"
 for t in apple-glass apple-glass-light; do
-	[[ -d $MACARCHY_DIR/$t/backgrounds ]] || continue
-	mkdir -p "$HOME/.config/omarchy/backgrounds/$t"
-	rsync -a --ignore-existing "$MACARCHY_DIR/$t/backgrounds/" "$HOME/.config/omarchy/backgrounds/$t/" \
-		&& note "$t wallpapers in place" || warn "$t wallpapers could not be copied"
+	src="$MACARCHY_DIR/$t"
+	dst="$HOME/.config/omarchy/themes/$t"
+	if [[ -d $src ]]; then
+		mkdir -p "$dst"
+		rsync -a --delete --exclude .git "$src/" "$dst/"
+		note "$t synced to ~/.config/omarchy/themes"
+	else
+		warn "$t repo missing"
+	fi
 done
 
 say "Installing macos-dynamic-wallpaper (time-of-day backgrounds)"
@@ -392,19 +391,6 @@ o.bind("CTRL + mouse_down", "Screen zoom out", "macarchy-zoom out")
 LUA
 
 # ---------------------------------------------------------------- themes
-
-say "Installing the apple-glass themes"
-for t in apple-glass apple-glass-light; do
-	src="$MACARCHY_DIR/$t"
-	dst="$HOME/.config/omarchy/themes/$t"
-	if [[ -d $src ]]; then
-		mkdir -p "$dst"
-		rsync -a --delete --exclude .git "$src/" "$dst/"
-		note "$t synced to ~/.config/omarchy/themes"
-	else
-		warn "$t repo missing"
-	fi
-done
 
 # The applied theme is a copy; re-apply so edits actually take. On a box
 # that never chose a theme from this pair, apply the dark one.
