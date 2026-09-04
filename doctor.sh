@@ -121,6 +121,19 @@ if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
 	echo "running now"
 	systemctl --user is-active -q macarchy-touchbar.service && ok "macarchy-touchbar" \
 		|| bad "macarchy-touchbar not running (journalctl --user -u macarchy-touchbar)"
+	# A Touch Bar module that fails to load is otherwise SILENT: the daemon says
+	# so once, then runs happily without that widget -- no failed unit, no toast,
+	# and `status` does not list it. It is what a rename here costs every OTHER
+	# repo that ships a module (jarvis ships one, and is not even in REPOS), whose
+	# installed copy is a COPY and keeps importing the old package name. The
+	# daemon hot-reloads on the file change, so a failure can be repaired later in
+	# the same boot: only the LAST word on each module counts.
+	broken=$(journalctl --user -u macarchy-touchbar.service -b --no-pager 2>/dev/null \
+		| sed -nE 's/.* module ([^ :]+) failed to load.*/FAIL \1/p; s/.* module ([^ :]+):.*/OK \1/p' \
+		| awk '{ s[$2] = ($1 == "FAIL") } END { for (m in s) if (s[m]) print m }' | sort | tr '\n' ' ')
+	broken=${broken% }
+	[[ -z $broken ]] && ok "Touch Bar modules loaded" \
+		|| bad "Touch Bar module failed to load: $broken (re-run install.sh in the repo that ships it)"
 	pgrep -f "macarchy-als daemon" >/dev/null && ok "macarchy-als"   || bad "macarchy-als not running"
 	pgrep -f "macarchy-pinch"      >/dev/null && ok "macarchy-pinch" || bad "macarchy-pinch not running"
 	# The tank remembers off across reboots (omarchy-aquarium-toggle:30, an
