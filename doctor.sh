@@ -78,9 +78,57 @@ else
 	skip "auto-appearance sun (no omarchy on this machine)"
 fi
 
-# A muted check is worse than none, so the doctor checks that it can speak.
-[[ -e $HOME/.config/systemd/user/macarchy-failed@.service ]] \
-	&& ok "failure notifier" || bad "failure notifier (macarchy-install/install.sh)"
+# A muted check is worse than none, so the doctor checks that it can speak. Testing
+# that the template FILE exists is not that test: it passed on every first install
+# while the units naming it were told "Unit macarchy-failed@….service not found",
+# because the file arrived after they did (#12). Ask the units instead.
+#
+# Three things this deliberately does NOT do, each of which it did in review:
+#  * scan every unit on the machine. doctor.sh:2 scopes this file to "the pieces
+#    install.sh puts in place"; jarvis, voxtype and aikit-sync also live in that
+#    directory, and blaming macarchy-install for a template THEY fail to ship is
+#    a false MISS that reds CI and points the user at the wrong installer.
+#  * look only under ~/.config. systemd resolves user units from /etc/systemd/user
+#    and /usr/lib/systemd/user too -- which is exactly where a PACKAGED notifier
+#    would land, so a package would otherwise make this check cry wolf at login.
+#  * read only the first target on the line. `OnFailure=a@%n.service b@%n.service`
+#    is legal, and stopping at the first is the silent pass this check exists to end.
+_unit_dirs=("$HOME/.config/systemd/user" /etc/systemd/user /usr/lib/systemd/user)
+_resolves() {                          # _resolves <unit-or-template-name>
+	local d; for d in "${_unit_dirs[@]}"; do [[ -e $d/$1 ]] && return 0; done; return 1
+}
+declare -A _want=()
+for _d in "${_unit_dirs[@]}"; do
+	[[ -d $_d ]] || continue
+	# macarchy's own units only -- every unit type, and drop-ins, not just *.service.
+	for _u in "$_d"/macarchy-*.{service,timer,path,socket} "$_d"/macos-dynamic-wallpaper*.{service,timer} \
+	          "$_d"/macarchy-*.d/*.conf; do
+		[[ -f $_u ]] || continue                            # no glob match
+		while read -r _line; do
+			for _tgt in $_line; do                          # unquoted: split the list
+				# a@%n.service -> a@.service; a plain name stays itself
+				[[ $_tgt == *@* ]] && _tgt="${_tgt%@*}@.service"
+				_want["$_tgt"]="${_want["$_tgt"]:+${_want["$_tgt"]} }$(basename "$_u")"
+			done
+		done < <(sed -nE 's/^[[:space:]]*OnFailure=[[:space:]]*(.*)/\1/p' "$_u")
+	done
+done
+# The floor: install.sh installs the template unconditionally, so its absence is a
+# MISS even when nothing happens to name it -- otherwise a run whose clones failed
+# leaves no declaring units and the check congratulates itself.
+_miss=()
+_resolves "macarchy-failed@.service" || _miss+=("macarchy-failed@.service is not installed")
+for _tmpl in "${!_want[@]}"; do
+	_resolves "$_tmpl" || _miss+=("$_tmpl needed by ${_want[$_tmpl]}")
+done
+if (( ${#_miss[@]} )); then
+	bad "failure notifier: ${_miss[*]} (macarchy-install/install.sh)"
+elif (( ${#_want[@]} == 0 )); then
+	ok "failure notifier installed (no macarchy unit declares OnFailure= yet)"
+else
+	_n=0; for _tmpl in "${!_want[@]}"; do read -ra _u <<<"${_want[$_tmpl]}"; _n=$((_n + ${#_u[@]})); done
+	ok "failure notifier ($_n macarchy unit$( ((_n>1)) && printf s) declare$( ((_n==1)) && printf s) it, all reachable)"
+fi
 systemctl --user is-enabled -q macarchy-doctor.service 2>/dev/null \
 	&& ok "login self-check enabled" || bad "login self-check (macarchy-install/install.sh)"
 b=/sys/class/power_supply/macsmc-battery/charge_control_end_threshold
