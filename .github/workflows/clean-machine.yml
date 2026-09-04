@@ -1,0 +1,46 @@
+name: clean machine
+
+# Nothing ever ran install.sh anywhere but the one laptop, and that is exactly
+# how two "nobody wired the startup" bugs survived. ubuntu-24.04-arm is a real
+# aarch64 machine (free while every macarchy repo is public), so install.sh's
+# arch gate passes honestly and needs no bypass. pacman and pkexec are shimmed
+# and doctor.sh -- the same checker the laptop uses -- decides.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clean-machine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          for f in boot.sh install.sh doctor.sh tests/*.sh; do bash -n "$f"; done
+        shell: bash
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git rsync python3 make gcc pkg-config fontconfig curl \
+            libwayland-dev libwayland-bin libwayland-egl-backend-dev \
+            wayland-protocols libegl-dev libgles-dev \
+            dbus-user-session lua5.4
+
+      - name: install.sh twice, then doctor.sh
+        run: tests/clean-machine.sh
+        env:
+          MACARCHY_DIR: ${{ runner.temp }}/work

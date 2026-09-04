@@ -21,6 +21,9 @@ FAILURES=0
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
 warn() { printf '    \033[33mwarning: %s\033[0m\n' "$*" >&2; FAILURES=$((FAILURES+1)); }
+# A fact about the machine, not a failed step: it must not inflate FAILURES and
+# so decide the exit code. doctor.sh is what decides whether the install is good.
+advise() { printf '    \033[33mnote: %s\033[0m\n' "$*" >&2; }
 
 # ---------------------------------------------------------------- sanity
 
@@ -29,7 +32,7 @@ if [[ $(uname -m) != aarch64 ]]; then
 	echo "macarchy targets Apple Silicon under Asahi Linux (aarch64); this is $(uname -m)." >&2
 	exit 1
 fi
-[[ $(uname -r) == *asahi* ]] || warn "kernel is not linux-asahi; sensors/Touch Bar may be missing"
+[[ $(uname -r) == *asahi* ]] || advise "kernel is not linux-asahi; sensors/Touch Bar may be missing"
 [[ -d /usr/share/omarchy ]] || warn "Omarchy not found in /usr/share/omarchy; theme and hook steps assume it"
 note "aarch64, kernel $(uname -r)"
 

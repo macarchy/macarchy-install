@@ -45,6 +45,34 @@ tiny-dfr masked and the macarchy-dfr unit enabled, the auto-appearance timer,
 Hyprland wiring, themes, and (inside a session) the running daemons.
 `install.sh` runs it at the end.
 
+### Proved in CI
+
+Every push and PR runs `tests/clean-machine.sh` on a clean `ubuntu-24.04-arm`
+runner — a real aarch64 machine, so the arch gate passes without a bypass. It
+runs `install.sh` **twice**, then `doctor.sh`, then a Lua syntax check on the
+appended blocks. That proves the `~/.local/bin` binaries land, the udev rules
+and the uinput module-load are installed, tiny-dfr is masked, the systemd user
+units enable, the Hyprland wiring lands exactly once, the themes sync, the
+theme hook installs, and the aquarium C code builds.
+
+What a clean-machine run can **never** prove, and only this laptop can:
+
+- that the Touch Bar draws anything (no DRM card, no evdev panel — only that
+  the unit enables)
+- that the charge limit caps at 80% (no `macsmc-battery` — the one honest
+  `skip` in `doctor.sh`)
+- that the aquarium renders (no compositor, no GPU, no layer-shell — only that
+  it compiles and installs)
+- that the `autostart.lua` lines ever *fire* (only that they parse and are
+  present once)
+- that `pacman` resolves the named packages on Arch/ALARM (a stub answers yes
+  and echoes every call)
+- that polkit's interactive path works (replaced by passwordless sudo)
+- anything about `omarchy theme set` (neither `omarchy` nor `omarchy-theme-set`
+  exists on a runner, so that block self-skips)
+- anything about the `video`-group and uinput permissions taking effect after a
+  re-login
+
 ## Requirements
 
 - Apple Silicon Mac on Asahi Linux (`linux-asahi`, aarch64)
