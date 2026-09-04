@@ -78,9 +78,41 @@ else
 	skip "auto-appearance sun (no omarchy on this machine)"
 fi
 
-# A muted check is worse than none, so the doctor checks that it can speak.
-[[ -e $HOME/.config/systemd/user/macarchy-failed@.service ]] \
-	&& ok "failure notifier" || bad "failure notifier (macarchy-install/install.sh)"
+# A muted check is worse than none, so the doctor checks that it can speak. Testing
+# that the template FILE exists is not that test: it passed on every first install
+# while the units naming it were being told "Unit macarchy-failed@….service not
+# found", because the file arrived after they did (#12). Ask the units instead --
+# whoever declares OnFailure= is who has to be able to reach it.
+declare -A _want=()
+for u in "$HOME"/.config/systemd/user/*.service; do
+	[[ -f $u ]] || continue                                  # no glob match
+	while read -r tmpl; do
+		[[ -n $tmpl ]] && _want["$tmpl"]="${_want["$tmpl"]:+${_want["$tmpl"]} }$(basename "$u")"
+	done < <(sed -nE 's/^OnFailure=([^ ]*@)%?[nNiIpP]?\.service.*/\1.service/p' "$u")
+done
+if (( ${#_want[@]} == 0 )); then
+	ok "failure notifier (nothing declares OnFailure= yet)"
+else
+	_miss=()
+	for tmpl in "${!_want[@]}"; do
+		[[ -e $HOME/.config/systemd/user/$tmpl ]] || _miss+=("$tmpl needed by ${_want[$tmpl]}")
+	done
+	if (( ${#_miss[@]} )); then
+		bad "failure notifier: ${_miss[*]} (macarchy-install/install.sh)"
+	else
+		# COUNT THE UNITS, not the templates: all three daemons name the same
+		# macarchy-failed@.service, so ${#_want[@]} is 1 and saying "1 unit" would
+		# have under-reported the three this check actually covers.
+		_n=0; for tmpl in "${!_want[@]}"; do
+			read -ra _u <<<"${_want[$tmpl]}"; _n=$((_n + ${#_u[@]}))
+		done
+		if (( _n == 1 )); then
+			ok "failure notifier (1 unit declares it, reachable)"
+		else
+			ok "failure notifier ($_n units declare it, all reachable)"
+		fi
+	fi
+fi
 systemctl --user is-enabled -q macarchy-doctor.service 2>/dev/null \
 	&& ok "login self-check enabled" || bad "login self-check (macarchy-install/install.sh)"
 b=/sys/class/power_supply/macsmc-battery/charge_control_end_threshold

@@ -231,6 +231,23 @@ sudo pacman -S --needed --noconfirm \
 
 # ----------------------------------------------------------------- repos
 
+# Before every component, because three of them name it and none of them ships it:
+# macarchy-touchbar.service, macarchy-auto-appearance.service and
+# macarchy-bar-contrast.service all declare `OnFailure=macarchy-failed@%n.service`.
+# It used to be installed with macarchy-doctor.service in the health section near
+# the end -- a tidy grouping and the wrong constraint -- so on a FIRST install
+# every failure before that point was dropped with "Failed to enqueue OnFailure=
+# job, ignoring: Unit macarchy-failed@….service not found", and the one thing the
+# notifier exists to catch (a daemon that dies silently) died silently. #12.
+#
+# A static file in this repo: no clone, no omarchy, no session. Nothing here has
+# to wait for anything.
+say "Installing the failure notifier the daemons name"
+mkdir -p "$HOME/.config/systemd/user"
+install -m644 systemd/macarchy-failed@.service "$HOME/.config/systemd/user/" \
+	&& note "macarchy-failed@.service in place before anything can name it" \
+	|| warn "could not install the failure notifier template"
+
 say "Fetching the macarchy repos into $MACARCHY_DIR"
 mkdir -p "$MACARCHY_DIR"
 for r in "${REPOS[@]}"; do
@@ -422,8 +439,7 @@ say "Wiring the machine's own health report"
 # it is worth having on PATH by hand anyway.
 mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
 install -m755 doctor.sh "$HOME/.local/bin/macarchy-doctor"
-install -m644 systemd/macarchy-doctor.service systemd/macarchy-failed@.service \
-	"$HOME/.config/systemd/user/"
+install -m644 systemd/macarchy-doctor.service "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 # enable, not --now: firing it here would grade the half-installed state it is
 # standing in, and the tail of this script already runs ./doctor.sh once.
