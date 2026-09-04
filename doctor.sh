@@ -62,6 +62,22 @@ fi
 f=$(systemctl --user --failed --no-legend --plain 2>/dev/null | awk '{print $1}' \
 	| sed 's/^macarchy-failed@\(.*\)\.service$/\1/' | sort -u | paste -sd' ' -)
 [[ -z $f ]] && ok "no failed user units" || bad "failed user units: $f"
+# macarchy-auto-appearance now exits 0 when it cannot compute a sun: a deliberate
+# no-op must not park its unit in --failed for ever (macarchy-core#12). That was
+# also the only thing a MISCONFIGURED laptop had to tell it, so the doctor asks
+# directly instead. Gated on omarchy, because without it the theme switch could
+# not happen at all -- false on a CI runner, true on any real machine.
+if command -v omarchy >/dev/null 2>&1 && command -v macarchy-auto-appearance >/dev/null 2>&1; then
+	aa=$(macarchy-auto-appearance status 2>/dev/null)
+	if [[ $aa == *"enabled=yes"*"error=sun"* || $aa == *"error=sun"*"enabled=yes"* ]]; then
+		bad "auto-appearance is on but cannot compute the sun (set coordinates; see macarchy-sun)"
+	else
+		ok "auto-appearance can decide a theme"
+	fi
+else
+	skip "auto-appearance sun (no omarchy on this machine)"
+fi
+
 # A muted check is worse than none, so the doctor checks that it can speak.
 [[ -e $HOME/.config/systemd/user/macarchy-failed@.service ]] \
 	&& ok "failure notifier" || bad "failure notifier (macarchy-install/install.sh)"
@@ -134,6 +150,16 @@ if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
 	broken=${broken% }
 	[[ -z $broken ]] && ok "Touch Bar modules loaded" \
 		|| bad "Touch Bar module failed to load: $broken (re-run install.sh in the repo that ships it)"
+	# Same as auto-appearance above: bar-contrast now exits 0 when it has
+	# nothing to sample, so a session that is missing grim/magick/hyprctl/jq
+	# would otherwise say nothing at all. Only meaningful with a session, which
+	# is exactly what this block already has.
+	if command -v macarchy-bar-contrast >/dev/null 2>&1; then
+		bc=$(macarchy-bar-contrast status 2>&1)
+		[[ $bc == *"nothing to sample"* ]] \
+			&& bad "bar-contrast has nothing to sample: ${bc#*: }" \
+			|| ok "bar-contrast can sample the screen"
+	fi
 	pgrep -f "macarchy-als daemon" >/dev/null && ok "macarchy-als"   || bad "macarchy-als not running"
 	pgrep -f "macarchy-pinch"      >/dev/null && ok "macarchy-pinch" || bad "macarchy-pinch not running"
 	# The tank remembers off across reboots (omarchy-aquarium-toggle:30, an
