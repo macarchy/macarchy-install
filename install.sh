@@ -382,6 +382,20 @@ for t in apple-glass apple-glass-light; do
 		mkdir -p "$dst"
 		rsync -a --delete --exclude .git "$src/" "$dst/"
 		note "$t synced to ~/.config/omarchy/themes"
+		# macos-dynamic-wallpaper reads ~/.config/omarchy/backgrounds/<theme>/,
+		# which only `omarchy theme set` ever populates -- so on a machine where
+		# Omarchy is not installed yet (and on CI, where it never is) the theme's
+		# own wallpapers are nowhere the tool can find them, and its unit failed on
+		# every tick. #9.
+		#
+		# --ignore-existing, NEVER --delete: this directory is also where a user
+		# keeps wallpapers they added themselves, and the whole point is to add
+		# what is missing without touching what is theirs.
+		if [[ -d $src/backgrounds ]]; then
+			mkdir -p "$HOME/.config/omarchy/backgrounds/$t"
+			rsync -a --ignore-existing "$src/backgrounds/" "$HOME/.config/omarchy/backgrounds/$t/"
+			note "$t wallpapers available to macos-dynamic-wallpaper"
+		fi
 	else
 		warn "$t repo missing"
 	fi
