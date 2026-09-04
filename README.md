@@ -14,11 +14,11 @@ Or, with the repo already cloned:
 
 | Piece | From | What you get |
 |---|---|---|
-| [omarchy-mac](https://github.com/macarchy/omarchy-mac) | `install.sh --udev` | Ambient-light auto-brightness, 80% battery charge limit + udev rule, macOS dock, 4-finger pinch gestures, CTRL+scroll screen zoom, Cmd-key grammar, app switcher, light/dark auto-appearance timer |
-| [macarchy-dfr](https://github.com/macarchy/macarchy-dfr) | `install.sh` | The Touch Bar, drawn by us: a systemd **user** service that owns the panel over DRM and its touch surface over evdev, with tiny-dfr masked out of the way |
+| [macarchy-core](https://github.com/macarchy/macarchy-core) | `install.sh --udev` | Ambient-light auto-brightness, 80% battery charge limit + udev rule, macOS dock, 4-finger pinch gestures, CTRL+scroll screen zoom, Cmd-key grammar, app switcher, light/dark auto-appearance timer |
+| [macarchy-touchbar](https://github.com/macarchy/macarchy-touchbar) | `install.sh` | The Touch Bar, drawn by us: a systemd **user** service that owns the panel over DRM and its touch surface over evdev, with tiny-dfr masked out of the way |
 | [omarchy-aquarium](https://github.com/macarchy/omarchy-aquarium) | `make install` | Animated GLSL underwater background (SUPER+ALT+A), theme-set hook, notification startle watcher |
 | [apple-glass](https://github.com/macarchy/apple-glass) / [-light](https://github.com/macarchy/apple-glass-light) | rsync into `~/.config/omarchy/themes` | The glass themes, tuned against the aquarium |
-| Hyprland wiring | guarded appends | Aquarium bind, zoom binds, daemon autostarts in `~/.config/hypr/{bindings,autostart}.lua` (no Touch Bar binds: macarchy-dfr runs its own commands) |
+| Hyprland wiring | guarded appends | Aquarium bind, zoom binds, daemon autostarts in `~/.config/hypr/{bindings,autostart}.lua` (no Touch Bar binds: macarchy-touchbar runs its own commands) |
 
 ## Idempotent by design
 
@@ -36,12 +36,30 @@ Every step converges or skips with a note:
 Re-running after a partial failure — or just to pull updates — is the
 intended workflow.
 
+## The old names migrate themselves
+
+`omarchy-mac` is now `macarchy-core`, `macarchy-dfr` is now
+`macarchy-touchbar`, and the commands that used to live in Omarchy's own
+`omarchy-*` namespace are `macarchy-*` — upstream Omarchy ships an
+`omarchy-battery-*` family of its own, and `/usr/share/omarchy/bin` comes
+first on `PATH`, so a future upstream addition would have silently shadowed
+ours.
+
+`install.sh` handles that for you, before it installs anything: the old user
+units are stopped, disabled and removed (enablement symlinks included),
+config and state move to their new directories, the stale binaries leave
+`~/.local/bin`, and the old command names in
+`~/.config/hypr/{bindings,autostart}.lua` are renamed **in place** so nothing
+gets wired twice. Every step says what it did; on a machine that never saw the
+old names it prints one line and moves on. Root-owned leftovers under `/etc`
+are reported with the `sudo rm` to run, never removed behind your back.
+
 ## Doctor
 
     ./doctor.sh
 
 Read-only health check: binaries, udev rules, the uinput module-load,
-tiny-dfr masked and the macarchy-dfr unit enabled, the auto-appearance timer,
+tiny-dfr masked and the macarchy-touchbar unit enabled, the auto-appearance timer,
 Hyprland wiring, themes, and (inside a session) the running daemons.
 `install.sh` runs it at the end.
 

@@ -35,7 +35,7 @@ done
 cat > "$TMP/bin/systemctl" <<'STUB'
 #!/bin/bash
 [[ $* == *--failed* ]] || exit 1
-printf '%s loaded failed failed d\n' macarchy-dfr.service macarchy-failed@macarchy-dfr.service.service
+printf '%s loaded failed failed d\n' macarchy-touchbar.service macarchy-failed@macarchy-touchbar.service.service
 STUB
 chmod +x "$TMP/bin"/*
 
@@ -47,7 +47,7 @@ check "notify prints nothing" [ -z "$out" ]
 check "exactly one toast"     [ "$(wc -l < "$SENT")" = 1 ]
 check "toast is clickable"    grep -q -- '--exec' "$SENT"
 # A real label the plain run also prints, so the body is the checks' own words.
-check "toast carries a miss"  grep -q 'macarchy-dfr' "$SENT"
+check "toast carries a miss"  grep -q 'macarchy-touchbar' "$SENT"
 
 # --- (b) a deliberately-off tank is not a fault -----------------------------
 mkdir -p "$XDG_STATE_HOME/omarchy-aquarium"
@@ -60,12 +60,12 @@ check "the off tank did toast (not vacuous)" [ "$(wc -l < "$SENT")" = 2 ]
 # The other half of the same fix: the timer being off is the Control Center
 # setting, so only a missing unit FILE is a defect.
 mkdir -p "$HOME/.config/systemd/user"
-touch "$HOME/.config/systemd/user/omarchy-auto-appearance.timer"
+touch "$HOME/.config/systemd/user/macarchy-auto-appearance.timer"
 check "off appearance timer counts as ok" \
 	grep -q 'ok.*auto-appearance timer (off' <<<"$(./doctor.sh)"
 # A failed notifier instance is not a second broken thing to report.
 check "notifier instance folds into its unit" \
-	[ "$(./doctor.sh | grep -o 'failed user units:.*')" = "failed user units: macarchy-dfr.service" ]
+	[ "$(./doctor.sh | grep -o 'failed user units:.*')" = "failed user units: macarchy-touchbar.service" ]
 
 # --- (c) the human-facing contract did not drift ----------------------------
 out=$(./doctor.sh); rc=$?

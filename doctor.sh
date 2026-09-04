@@ -25,9 +25,9 @@ SKIP=0
 skip() { printf '  \033[33mskip\033[0m %s\n' "$*"; SKIP=$((SKIP+1)); }
 
 echo "binaries"
-for b in macarchy-dfr macarchy-doctor omarchy-als omarchy-battery-limit omarchy-dock \
-         omarchy-dock-theme omarchy-pinch omarchy-zoom omarchy-gtk-settings \
-         omarchy-auto-appearance omarchy-aquarium omarchy-aquarium-toggle \
+for b in macarchy-touchbar macarchy-doctor macarchy-als macarchy-battery-limit macarchy-dock \
+         macarchy-dock-theme macarchy-pinch macarchy-zoom macarchy-gtk-settings \
+         macarchy-auto-appearance omarchy-aquarium omarchy-aquarium-toggle \
          omarchy-aquarium-notify; do
 	have "$b"
 done
@@ -35,23 +35,23 @@ done
 echo "system pieces"
 [[ -f /etc/udev/rules.d/90-battery-charge-limit.rules ]] \
 	&& ok "battery udev rule" || bad "battery udev rule (install.sh runs it with sudo)"
-[[ -f /etc/udev/rules.d/70-macarchy-dfr.rules ]] \
-	&& ok "Touch Bar uinput udev rule" || bad "Touch Bar uinput udev rule (macarchy-dfr/install.sh)"
-[[ -f /etc/modules-load.d/macarchy-dfr.conf ]] \
+[[ -f /etc/udev/rules.d/70-macarchy-touchbar.rules ]] \
+	&& ok "Touch Bar uinput udev rule" || bad "Touch Bar uinput udev rule (macarchy-touchbar/install.sh)"
+[[ -f /etc/modules-load.d/macarchy-touchbar.conf ]] \
 	&& ok "uinput loaded at boot" || bad "uinput module-load (else /dev/uinput stays root-only)"
 [[ $(systemctl is-enabled tiny-dfr 2>/dev/null) == masked ]] \
-	&& ok "tiny-dfr masked" || bad "tiny-dfr not masked (it fights macarchy-dfr for the panel)"
-systemctl --user is-enabled -q macarchy-dfr.service 2>/dev/null \
-	&& ok "macarchy-dfr unit enabled" || bad "macarchy-dfr unit enabled (macarchy-dfr/install.sh)"
-# omarchy-mac/install.sh:22 — "Auto appearance is on exactly when this timer is
+	&& ok "tiny-dfr masked" || bad "tiny-dfr not masked (it fights macarchy-touchbar for the panel)"
+systemctl --user is-enabled -q macarchy-touchbar.service 2>/dev/null \
+	&& ok "macarchy-touchbar unit enabled" || bad "macarchy-touchbar unit enabled (macarchy-touchbar/install.sh)"
+# macarchy-core/install.sh:22 — "Auto appearance is on exactly when this timer is
 # enabled, and the Control Center flips it." A disabled timer is a preference;
 # only a missing unit file is a broken install. A login toast that fires on a
 # deliberate setting is muted within a week.
-if [[ -e $HOME/.config/systemd/user/omarchy-auto-appearance.timer ]]; then
-	systemctl --user is-active -q omarchy-auto-appearance.timer 2>/dev/null \
+if [[ -e $HOME/.config/systemd/user/macarchy-auto-appearance.timer ]]; then
+	systemctl --user is-active -q macarchy-auto-appearance.timer 2>/dev/null \
 		&& ok "auto-appearance timer" || ok "auto-appearance timer (off — your choice)"
 else
-	bad "auto-appearance timer unit (omarchy-mac/install.sh)"
+	bad "auto-appearance timer unit (macarchy-core/install.sh)"
 fi
 # Whatever systemd already knows is broken. The sed is load-bearing: a notifier
 # instance that hit its start limit is itself a failed unit, and it must fold
@@ -80,12 +80,12 @@ echo "hyprland wiring"
 BIND="$HOME/.config/hypr/bindings.lua"
 AUTO="$HOME/.config/hypr/autostart.lua"
 grep -qF "omarchy-aquarium-toggle"  "$BIND" 2>/dev/null && ok "aquarium bind"      || bad "aquarium bind"
-grep -qF "omarchy-zoom"             "$BIND" 2>/dev/null && ok "zoom binds"         || bad "zoom binds"
+grep -qF "macarchy-zoom"            "$BIND" 2>/dev/null && ok "zoom binds"         || bad "zoom binds"
 grep -qF "macarchy-keys"            "$BIND" 2>/dev/null && ok "Cmd-key grammar"    || bad "Cmd-key grammar"
-grep -qF "macarchy-dfr.service"     "$AUTO" 2>/dev/null && ok "dfr autostart"      || bad "dfr autostart"
-grep -qF "omarchy-als daemon"       "$AUTO" 2>/dev/null && ok "als autostart"      || bad "als autostart"
-grep -qF "omarchy-pinch"            "$AUTO" 2>/dev/null && ok "pinch autostart"    || bad "pinch autostart"
-grep -qF "omarchy-dock"             "$AUTO" 2>/dev/null && ok "dock autostart"     || bad "dock autostart"
+grep -qF "macarchy-touchbar.service" "$AUTO" 2>/dev/null && ok "Touch Bar autostart" || bad "Touch Bar autostart"
+grep -qF "macarchy-als daemon"      "$AUTO" 2>/dev/null && ok "als autostart"      || bad "als autostart"
+grep -qF "macarchy-pinch"           "$AUTO" 2>/dev/null && ok "pinch autostart"    || bad "pinch autostart"
+grep -qF "macarchy-dock"            "$AUTO" 2>/dev/null && ok "dock autostart"     || bad "dock autostart"
 grep -qF "omarchy-aquarium-toggle restore" "$AUTO" 2>/dev/null && ok "aquarium autostart" || bad "aquarium autostart"
 
 echo "themes and hooks"
@@ -103,10 +103,10 @@ done
 # and it must not go silently missing over an env var it does not need.
 if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
 	echo "running now"
-	systemctl --user is-active -q macarchy-dfr.service && ok "macarchy-dfr" \
-		|| bad "macarchy-dfr not running (journalctl --user -u macarchy-dfr)"
-	pgrep -f "omarchy-als daemon" >/dev/null && ok "omarchy-als"   || bad "omarchy-als not running"
-	pgrep -f "omarchy-pinch"      >/dev/null && ok "omarchy-pinch" || bad "omarchy-pinch not running"
+	systemctl --user is-active -q macarchy-touchbar.service && ok "macarchy-touchbar" \
+		|| bad "macarchy-touchbar not running (journalctl --user -u macarchy-touchbar)"
+	pgrep -f "macarchy-als daemon" >/dev/null && ok "macarchy-als"   || bad "macarchy-als not running"
+	pgrep -f "macarchy-pinch"      >/dev/null && ok "macarchy-pinch" || bad "macarchy-pinch not running"
 	# The tank remembers off across reboots (omarchy-aquarium-toggle:30, an
 	# unwritten state means on). Off on purpose is not a fault.
 	aq=$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-aquarium/enabled" 2>/dev/null || echo on)

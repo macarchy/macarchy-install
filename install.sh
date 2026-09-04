@@ -1,7 +1,7 @@
 #!/bin/bash
 # macarchy-install — one command from a fresh Omarchy-on-Asahi machine to the
-# full macarchy setup: the omarchy-mac suite (auto-brightness, battery limit,
-# dock, gestures, Cmd keys), macarchy-dfr (the Touch Bar), the aquarium
+# full macarchy setup: the macarchy-core suite (auto-brightness, battery limit,
+# dock, gestures, Cmd keys), macarchy-touchbar (the Touch Bar), the aquarium
 # background, and the apple-glass themes.
 #
 # Idempotent: every step either converges or is skipped with a note, so
@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 
 MACARCHY_DIR="${MACARCHY_DIR:-$HOME/Work}"
 GH=https://github.com/macarchy
-REPOS=(omarchy-mac macarchy-dfr omarchy-aquarium apple-glass apple-glass-light)
+REPOS=(macarchy-core macarchy-touchbar omarchy-aquarium apple-glass apple-glass-light)
 
 FAILURES=0
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -36,6 +36,121 @@ fi
 [[ -d /usr/share/omarchy ]] || warn "Omarchy not found in /usr/share/omarchy; theme and hook steps assume it"
 note "aarch64, kernel $(uname -r)"
 
+# ------------------------------------------------------- legacy migration
+
+# Everything renamed at once: omarchy-mac -> macarchy-core, macarchy-dfr ->
+# macarchy-touchbar, and every command that used to sit in upstream Omarchy's
+# omarchy-* namespace (where a future upstream omarchy-battery-limit would have
+# silently shadowed ours) moved to macarchy-*. The old units keep running, the
+# old binaries keep answering on PATH and the old config keeps being read, so
+# they have to go BEFORE anything new is installed.
+#
+# Same contract as the rest of this script: every step converges or says why it
+# skipped, and a second run finds nothing left to do.
+migrate_legacy() {
+	say "Clearing anything left under the old names"
+	local UD="$HOME/.config/systemd/user"
+	local CFG="$HOME/.config" ST="$HOME/.local/state" BIN="$HOME/.local/bin"
+	local u l f b lua before after touched=0 reload=0
+
+	# --- user units. The .wants/ symlink outlives `disable` when the unit file
+	# went away first, and a dangling one makes daemon-reload complain forever.
+	for u in macarchy-dfr.service \
+	         omarchy-auto-appearance.service omarchy-auto-appearance.timer \
+	         omarchy-bar-contrast.service omarchy-bar-contrast.timer \
+	         macos-dynamic-wallpaper.service macos-dynamic-wallpaper.timer; do
+		if [[ -e $UD/$u ]]; then
+			systemctl --user disable --now "$u" >/dev/null 2>&1
+			rm -f "$UD/$u" && note "removed old unit $u" && reload=1
+		fi
+		for l in "$UD"/*.wants/"$u"; do
+			[[ -L $l ]] || continue          # no glob match, or a real file
+			rm -f "$l" && note "removed stale enablement ${l#"$UD"/}" && reload=1
+		done
+	done
+	if (( reload )); then
+		systemctl --user daemon-reload 2>/dev/null || advise "systemctl --user daemon-reload failed (no user bus?)"
+		touched=1
+	fi
+
+	# --- config. macarchy-dfr was the newer name, omarchy-dfr the one before
+	# it; when both survived, the newer wins and the older is kept aside.
+	if [[ -d $CFG/macarchy-touchbar ]]; then
+		[[ -d $CFG/macarchy-dfr ]] \
+			&& advise "left ~/.config/macarchy-dfr: ~/.config/macarchy-touchbar already exists"
+	elif [[ -d $CFG/macarchy-dfr ]]; then
+		mv "$CFG/macarchy-dfr" "$CFG/macarchy-touchbar" \
+			&& { note "config: macarchy-dfr -> macarchy-touchbar"; touched=1; }
+	elif [[ -d $CFG/omarchy-dfr ]]; then
+		mv "$CFG/omarchy-dfr" "$CFG/macarchy-touchbar" \
+			&& { note "config: omarchy-dfr -> macarchy-touchbar"; touched=1; }
+	fi
+	if [[ -d $CFG/omarchy-dfr ]]; then
+		if [[ -e $CFG/omarchy-dfr.bak ]]; then
+			advise "left ~/.config/omarchy-dfr: ~/.config/omarchy-dfr.bak is already taken"
+		else
+			mv "$CFG/omarchy-dfr" "$CFG/omarchy-dfr.bak" \
+				&& { note "config: kept the newer copy, backed the older up as omarchy-dfr.bak"; touched=1; }
+		fi
+	fi
+
+	# --- state
+	if [[ -d $ST/macarchy-dfr && ! -e $ST/macarchy-touchbar ]]; then
+		mv "$ST/macarchy-dfr" "$ST/macarchy-touchbar" \
+			&& { note "state: macarchy-dfr -> macarchy-touchbar"; touched=1; }
+	elif [[ -d $ST/macarchy-dfr ]]; then
+		advise "left ~/.local/state/macarchy-dfr: ~/.local/state/macarchy-touchbar already exists"
+	fi
+	for f in "$ST/omarchy-dfr.log" "$ST/omarchy-dfr-device.json"; do
+		[[ -e $f ]] && rm -f "$f" && { note "removed stale ${f#"$HOME"/}"; touched=1; }
+	done
+	if [[ -d $ST/omarchy-als && ! -e $ST/macarchy-als ]]; then
+		mv "$ST/omarchy-als" "$ST/macarchy-als" \
+			&& { note "state: omarchy-als -> macarchy-als"; touched=1; }
+	fi
+
+	# --- binaries. ~/.local/bin is on PATH ahead of nothing in particular, so a
+	# leftover here is a second, older copy of a daemon that still starts.
+	for b in macarchy-dfr omarchy-als omarchy-battery-limit omarchy-bar-contrast \
+	         omarchy-auto-appearance omarchy-dock omarchy-dock-theme \
+	         omarchy-gtk-settings omarchy-locate omarchy-pinch omarchy-sun \
+	         omarchy-zoom macos-dynamic-wallpaper; do
+		if [[ -e $BIN/$b || -L $BIN/$b ]]; then
+			rm -f "$BIN/$b" && { note "removed old ~/.local/bin/$b"; touched=1; }
+		fi
+		rm -f "$BIN"/__pycache__/"$b".*.pyc   # bytecode named after the script
+	done
+	rmdir "$BIN/__pycache__" 2>/dev/null
+
+	# --- root-owned files. Not worth a sudo prompt of its own; say what to run.
+	for f in /etc/udev/rules.d/70-macarchy-dfr.rules /etc/modules-load.d/macarchy-dfr.conf; do
+		[[ -e $f ]] || continue
+		if rm -f "$f" 2>/dev/null; then
+			note "removed $f"; touched=1
+		else
+			advise "old $f is still there; remove it with: sudo rm -f $f"
+		fi
+	done
+
+	# --- Hyprland wiring. Rewritten IN PLACE, not appended to: the guarded
+	# appends below key on the command name, so an un-migrated block would leave
+	# them wiring a second copy of every daemon.
+	for lua in "$HOME/.config/hypr/autostart.lua" "$HOME/.config/hypr/bindings.lua"; do
+		[[ -f $lua ]] || continue
+		before=$(md5sum <"$lua")
+		sed -i -E \
+			-e 's/\b(macarchy|omarchy)-dfr\b/macarchy-touchbar/g' \
+			-e 's/\bomarchy-(dock-theme|dock|bar-contrast|battery-limit|auto-appearance|gtk-settings|als|locate|pinch|sun|zoom)\b/macarchy-\1/g' \
+			-e 's/\bmacos-dynamic-wallpaper\b/macarchy-dynamic-wallpaper/g' \
+			"$lua"
+		after=$(md5sum <"$lua")
+		[[ $before == "$after" ]] || { note "$(basename "$lua"): renamed the old commands in place"; touched=1; }
+	done
+
+	(( touched )) || note "nothing from the old names is left"
+}
+migrate_legacy
+
 # -------------------------------------------------------------- packages
 
 say "Installing packages (pacman --needed)"
@@ -45,8 +160,8 @@ sudo pacman -S --needed --noconfirm \
 	brightnessctl libinput rsync \
 	tiny-dfr \
 	|| warn "pacman failed; later steps may miss tools"
-# tiny-dfr is installed but MASKED: macarchy-dfr owns the Touch Bar now, and
-# tiny-dfr is only what `macarchy-dfr/install.sh --uninstall` falls back to.
+# tiny-dfr is installed but MASKED: macarchy-touchbar owns the Touch Bar now, and
+# tiny-dfr is only what `macarchy-touchbar/install.sh --uninstall` falls back to.
 
 # ----------------------------------------------------------------- repos
 
@@ -69,25 +184,25 @@ for r in "${REPOS[@]}"; do
 	fi
 done
 
-# ----------------------------------------------------- omarchy-mac suite
+# ----------------------------------------------------- macarchy-core suite
 
-say "Installing the omarchy-mac suite (scripts, hook, timer, udev rule, Touch Bar icons)"
-if [[ -x $MACARCHY_DIR/omarchy-mac/install.sh ]]; then
-	(cd "$MACARCHY_DIR/omarchy-mac" && ./install.sh --udev) || warn "omarchy-mac install failed"
+say "Installing the macarchy-core suite (scripts, hook, timer, udev rule, Touch Bar icons)"
+if [[ -x $MACARCHY_DIR/macarchy-core/install.sh ]]; then
+	(cd "$MACARCHY_DIR/macarchy-core" && ./install.sh --udev) || warn "macarchy-core install failed"
 else
-	warn "omarchy-mac/install.sh missing"
+	warn "macarchy-core/install.sh missing"
 fi
 
-# ---------------------------------------------------------- macarchy-dfr
+# ---------------------------------------------------------- macarchy-touchbar
 
-say "Installing macarchy-dfr (the Touch Bar daemon)"
-if [[ -x $MACARCHY_DIR/macarchy-dfr/install.sh ]]; then
+say "Installing macarchy-touchbar (the Touch Bar daemon)"
+if [[ -x $MACARCHY_DIR/macarchy-touchbar/install.sh ]]; then
 	# Its own installer owns the whole story: packages, the icon font, the
 	# video group, the uinput udev rule and modules-load, masking tiny-dfr,
-	# the user unit, and migrating any old omarchy-dfr Hyprland wiring.
-	(cd "$MACARCHY_DIR/macarchy-dfr" && ./install.sh) || warn "macarchy-dfr install failed"
+	# the user unit, and migrating the Hyprland wiring left by its old names.
+	(cd "$MACARCHY_DIR/macarchy-touchbar" && ./install.sh) || warn "macarchy-touchbar install failed"
 else
-	warn "macarchy-dfr/install.sh missing"
+	warn "macarchy-touchbar/install.sh missing"
 fi
 
 # -------------------------------------------------------------- aquarium
@@ -125,30 +240,30 @@ append_once() {   # append_once <file> <guard-string> <<'EOF' ... EOF
 
 say "Wiring autostart.lua"
 AUTO="$HOME/.config/hypr/autostart.lua"
-append_once "$AUTO" "macarchy-dfr.service" <<'LUA'
+append_once "$AUTO" "macarchy-touchbar.service" <<'LUA'
 
--- The Touch Bar (macarchy-dfr): a systemd user service, so it restarts on
+-- The Touch Bar (macarchy-touchbar): a systemd user service, so it restarts on
 -- failure and logs to the journal. The unit is enabled too — this line only
 -- makes the session-start explicit, and starting it twice is a no-op.
-o.exec_on_start("systemctl --user start macarchy-dfr.service")
+o.exec_on_start("systemctl --user start macarchy-touchbar.service")
 LUA
-append_once "$AUTO" "omarchy-dock" <<'LUA'
+append_once "$AUTO" "macarchy-dock" <<'LUA'
 
 -- macOS-style dock. Autohiding against a bottom hotspot, so it costs no
 -- screen space until you reach for it.
-o.exec_on_start(os.getenv("HOME") .. "/.local/bin/omarchy-dock")
+o.exec_on_start(os.getenv("HOME") .. "/.local/bin/macarchy-dock")
 LUA
-append_once "$AUTO" "omarchy-als daemon" <<'LUA'
+append_once "$AUTO" "macarchy-als daemon" <<'LUA'
 
 -- Ambient-light auto-brightness: panel + keyboard backlight follow the AOP
 -- light sensor; brightness keys teach it your preferred offset.
-o.exec_on_start("omarchy-als daemon")
+o.exec_on_start("macarchy-als daemon")
 LUA
-append_once "$AUTO" "omarchy-pinch" <<'LUA'
+append_once "$AUTO" "macarchy-pinch" <<'LUA'
 
 -- Four-finger pinch gestures (pinch in = launcher). Exits quietly until
 -- libinput-tools is installed.
-o.exec_on_start("omarchy-pinch")
+o.exec_on_start("macarchy-pinch")
 LUA
 append_once "$AUTO" "omarchy-aquarium-toggle restore" <<'LUA'
 
@@ -160,7 +275,7 @@ LUA
 say "Wiring bindings.lua"
 BIND="$HOME/.config/hypr/bindings.lua"
 # No Touch Bar binds any more: the old F13-F24 bridge existed because tiny-dfr
-# could only emit key codes. macarchy-dfr draws the bar itself, runs the
+# could only emit key codes. macarchy-touchbar draws the bar itself, runs the
 # commands itself, and types through its own uinput device.
 append_once "$BIND" "omarchy-aquarium-toggle" <<'LUA'
 
@@ -170,13 +285,13 @@ append_once "$BIND" "omarchy-aquarium-toggle" <<'LUA'
 -- normal wallpaper. (github.com/macarchy/omarchy-aquarium)
 o.bind("SUPER + ALT + A", "Aquarium background", "omarchy-aquarium-toggle")
 LUA
-append_once "$BIND" "omarchy-zoom" <<'LUA'
+append_once "$BIND" "macarchy-zoom" <<'LUA'
 
 -- ── Screen zoom ───────────────────────────────────────────────────────────
 -- macOS accessibility zoom: hold CTRL and scroll to magnify the screen
 -- around the cursor; scrolling back out lands exactly at 1x.
-o.bind("CTRL + mouse_up", "Screen zoom in", "omarchy-zoom in")
-o.bind("CTRL + mouse_down", "Screen zoom out", "omarchy-zoom out")
+o.bind("CTRL + mouse_up", "Screen zoom in", "macarchy-zoom in")
+o.bind("CTRL + mouse_down", "Screen zoom out", "macarchy-zoom out")
 LUA
 
 # ---------------------------------------------------------------- themes
@@ -209,9 +324,9 @@ fi
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
 	say "Reloading Hyprland and starting what can start now"
 	hyprctl reload >/dev/null && note "hyprctl reload"
-	systemctl --user start macarchy-dfr.service 2>/dev/null && note "macarchy-dfr started" || warn "macarchy-dfr did not start (journalctl --user -u macarchy-dfr)"
-	pgrep -f "omarchy-als daemon" >/dev/null || { setsid omarchy-als daemon >/dev/null 2>&1 & note "started omarchy-als"; }
-	pgrep -f omarchy-pinch >/dev/null || { setsid omarchy-pinch >/dev/null 2>&1 & note "started omarchy-pinch"; }
+	systemctl --user start macarchy-touchbar.service 2>/dev/null && note "macarchy-touchbar started" || warn "macarchy-touchbar did not start (journalctl --user -u macarchy-touchbar)"
+	pgrep -f "macarchy-als daemon" >/dev/null || { setsid macarchy-als daemon >/dev/null 2>&1 & note "started macarchy-als"; }
+	pgrep -f macarchy-pinch >/dev/null || { setsid macarchy-pinch >/dev/null 2>&1 & note "started macarchy-pinch"; }
 	omarchy-aquarium-toggle restore && note "aquarium restored to its remembered state"
 else
 	note "no Hyprland session: daemons start on next login (autostart.lua)"

@@ -11,7 +11,7 @@ ConditionEnvironment=WAYLAND_DISPLAY
 [Service]
 Type=oneshot
 # The daemons this checks are launched by Hyprland's autostart.lua, not by
-# systemd, so the target being up says nothing about them; and macarchy-dfr's
+# systemd, so the target being up says nothing about them; and macarchy-touchbar's
 # StartLimitIntervalSec=120 means a genuine crash-loop needs two minutes to
 # admit defeat, by which point it has fired its own toast. Type=oneshot
 # disables TimeoutStartSec by default (systemd.service(5)), so this sleep is

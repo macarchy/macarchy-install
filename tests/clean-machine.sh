@@ -26,7 +26,7 @@ export MACARCHY_NO_HARDWARE='no macsmc battery on a CI runner'
 sudo tee /usr/local/bin/pacman >/dev/null <<'EOF'
 #!/bin/bash
 # Stub: every package operation is ECHOED, never silent. Exit 0 on -Qi so
-# macarchy-dfr believes python-cairo/python-gobject are present instead of
+# macarchy-touchbar believes python-cairo/python-gobject are present instead of
 # trying to install them. This is the biggest thing CI cannot prove.
 echo "[stub] pacman $*"
 EOF
@@ -39,9 +39,9 @@ exec sudo "$@"
 EOF
 sudo chmod 755 /usr/local/bin/pacman /usr/local/bin/pkexec
 
-# What a fresh Omarchy machine already has. omarchy-mac/install.sh does
+# What a fresh Omarchy machine already has. macarchy-core/install.sh does
 # `install -m644 keys/macarchy-keys.lua "$HOME/.config/hypr/..."` with no mkdir
-# under `set -e`, and macarchy-dfr's migration block appends to autostart.lua in
+# under `set -e`, and macarchy-touchbar's migration block appends to autostart.lua in
 # the same directory: without this the suite dies there.
 mkdir -p "$HOME/.config/hypr"
 sudo mkdir -p /usr/share/omarchy
@@ -64,13 +64,13 @@ systemctl --user show -p Version --value >/dev/null 2>&1 || {
 sha256sum "$HOME/.config/hypr/autostart.lua" "$HOME/.config/hypr/bindings.lua" >"$MACARCHY_DIR/lua.sha"
 
 # No-op on a GitHub runner: `id -nG` has no `video` until the next login, so
-# macarchy-dfr/install.sh takes its "log out and back in" branch and never
+# macarchy-touchbar/install.sh takes its "log out and back in" branch and never
 # starts the daemon. Kept for the other case this script serves -- a throwaway
 # Arch box re-run after that login, where the daemon dies for want of a Touch
 # Bar, spends StartLimitBurst=10 within StartLimitIntervalSec=120, and makes the
 # second install's `systemctl restart` fail under `set -e`.
-systemctl --user stop macarchy-dfr.service 2>/dev/null
-systemctl --user reset-failed macarchy-dfr.service 2>/dev/null
+systemctl --user stop macarchy-touchbar.service 2>/dev/null
+systemctl --user reset-failed macarchy-touchbar.service 2>/dev/null
 
 ./install.sh || exit 1
 sha256sum -c "$MACARCHY_DIR/lua.sha" || {
