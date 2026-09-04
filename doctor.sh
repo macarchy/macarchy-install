@@ -27,8 +27,8 @@ skip() { printf '  \033[33mskip\033[0m %s\n' "$*"; SKIP=$((SKIP+1)); }
 echo "binaries"
 for b in macarchy-touchbar macarchy-doctor macarchy-als macarchy-battery-limit macarchy-dock \
          macarchy-dock-theme macarchy-pinch macarchy-zoom macarchy-gtk-settings \
-         macarchy-auto-appearance omarchy-aquarium omarchy-aquarium-toggle \
-         omarchy-aquarium-notify; do
+         macarchy-auto-appearance macos-dynamic-wallpaper omarchy-aquarium \
+         omarchy-aquarium-toggle omarchy-aquarium-notify; do
 	have "$b"
 done
 
@@ -95,6 +95,22 @@ for t in apple-glass apple-glass-light; do
 done
 [[ -x $HOME/.config/omarchy/hooks/theme-set.d/aquarium-theme ]] \
 	&& ok "aquarium theme hook" || bad "aquarium theme hook"
+[[ -x $HOME/.config/omarchy/hooks/theme-set.d/dynamic-wallpaper ]] \
+	&& ok "dynamic wallpaper hook" || bad "dynamic wallpaper hook (macarchy-core/install.sh)"
+# The timer is the whole mechanism: without it the wallpaper only ever changes
+# when a theme is set. Its config is separate because the tool exits non-zero
+# on a bad one, and a machine can legitimately have the timer off.
+systemctl --user is-enabled -q macos-dynamic-wallpaper.timer 2>/dev/null \
+	&& ok "dynamic wallpaper timer" \
+	|| bad "dynamic wallpaper timer (macos-dynamic-wallpaper/install.sh)"
+w=${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/dynamic-wallpaper.json
+if [[ ! -e $w ]]; then
+	bad "dynamic wallpaper config (${w/#$HOME/\~})"
+elif out=$(macos-dynamic-wallpaper status 2>&1); then
+	ok "dynamic wallpaper config ($(awk -F: '/^phase:/{print $2}' <<<"$out" | tr -d ' '))"
+else
+	bad "dynamic wallpaper config: $(tail -1 <<<"$out")"
+fi
 
 # WAYLAND_DISPLAY, not HYPRLAND_INSTANCE_SIGNATURE, matching what
 # /usr/lib/systemd/user/omarchy-crash-watch.service already conditions on. uwsm
