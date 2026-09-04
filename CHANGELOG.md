@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/macarchy/macarchy-install/compare/v0.3.1...v0.3.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **install:** make the failure notifier reachable from the first failure ([#12](https://github.com/macarchy/macarchy-install/issues/12)) ([#13](https://github.com/macarchy/macarchy-install/issues/13)) ([10fe03f](https://github.com/macarchy/macarchy-install/commit/10fe03f24dc6e61ff36ef591234115bee764c88c))
+
 ## [0.3.1](https://github.com/macarchy/macarchy-install/compare/v0.3.0...v0.3.1) (2026-09-04)
 
 
