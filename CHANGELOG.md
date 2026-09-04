@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/macarchy/macarchy-install/compare/v0.3.0...v0.3.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **ci:** make the clean-machine failures diagnosable, then green ([#9](https://github.com/macarchy/macarchy-install/issues/9)) ([#10](https://github.com/macarchy/macarchy-install/issues/10)) ([acfd259](https://github.com/macarchy/macarchy-install/commit/acfd259a07875a42284a1cc54f3f0f1d8a9d963e))
+
 ## [0.3.0](https://github.com/macarchy/macarchy-install/compare/v0.2.0...v0.3.0) (2026-09-04)
 
 
