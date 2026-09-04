@@ -1,0 +1,23 @@
+[Unit]
+Description=Report anything the macarchy setup is missing
+# Login-only, like omarchy-migrate-notify. The answer changes when an installer
+# runs or a boot moves a device node -- both session boundaries -- so a
+# repeating timer would only re-send a toast that was already dismissed, and
+# half the doctor's checks are live state that legitimately churns mid-session.
+After=graphical-session.target
+PartOf=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+Type=oneshot
+# The daemons this checks are launched by Hyprland's autostart.lua, not by
+# systemd, so the target being up says nothing about them; and macarchy-dfr's
+# StartLimitIntervalSec=120 means a genuine crash-loop needs two minutes to
+# admit defeat, by which point it has fired its own toast. Type=oneshot
+# disables TimeoutStartSec by default (systemd.service(5)), so this sleep is
+# not killed at 90s. If it ever cries wolf on a cold boot, raise it.
+ExecStartPre=/bin/sleep 120
+ExecStart=%h/.local/bin/macarchy-doctor --notify
+
+[Install]
+WantedBy=graphical-session.target
