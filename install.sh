@@ -217,6 +217,22 @@ else
 	note "no Hyprland session: daemons start on next login (autostart.lua)"
 fi
 
+# ------------------------------------------------------------ health surface
+
+say "Wiring the machine's own health report"
+# doctor.sh becomes runtime code: the login unit needs a stable path for it, and
+# it is worth having on PATH by hand anyway.
+mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+install -m755 doctor.sh "$HOME/.local/bin/macarchy-doctor"
+install -m644 systemd/macarchy-doctor.service systemd/macarchy-failed@.service \
+	"$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+# enable, not --now: firing it here would grade the half-installed state it is
+# standing in, and the tail of this script already runs ./doctor.sh once.
+systemctl --user enable macarchy-doctor.service >/dev/null 2>&1 \
+	&& note "macarchy-doctor runs at each login" \
+	|| warn "could not enable macarchy-doctor.service"
+
 # ----------------------------------------------------------------- done
 
 say "Checking the result"

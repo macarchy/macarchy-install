@@ -1,0 +1,22 @@
+[Unit]
+Description=Say that %i failed
+# One notifier for every macarchy unit, instead of a -failed.service per daemon.
+# On 2026-09-04 the Touch Bar restarted 69 times in four minutes in silence: a
+# dead daemon looks exactly like a daemon with nothing to show.
+#
+# The rate limiter is systemd, not us. omarchy-bar-contrast runs every five
+# minutes, so a broken one would otherwise toast twelve times an hour; after two
+# systemd refuses to start the instance, and that refusal shows up in
+# `systemctl --user --failed`, which the login doctor already reports.
+StartLimitIntervalSec=3600
+StartLimitBurst=2
+
+[Service]
+Type=oneshot
+# ponytail: ceiling -- systemd's own ExecStart expansion. $(...) survives here
+# (macarchy-dfr-failed.service was the working precedent), but ${VAR:-x} does
+# not, and %s/%Y are specifiers. Do not "simplify" this into shell variables.
+# %i, never %I: OnFailure=...@%n.service makes the instance the real unit name,
+# which is what journalctl -u expects; %I unescapes and could emit a quote that
+# breaks out of this command line.
+ExecStart=/bin/bash -c 'command -v omarchy-notification-send >/dev/null || { command -v notify-send >/dev/null && notify-send -u critical -a macarchy "%i failed" "$(journalctl --user -u %i -n 1 -o cat 2>/dev/null | tail -c 200)"; exit 0; }; omarchy-notification-send -u critical -g "󰀪" "%i failed" "$(journalctl --user -u %i -n 1 -o cat 2>/dev/null | tail -c 200)" --exec omarchy-launch-floating-terminal-with-presentation journalctl --user -u %i -n 50 --no-pager'

@@ -3,10 +3,19 @@
 # Read-only; exits non-zero if anything is missing.
 set -uo pipefail
 
+# --notify: the same checks, no stdout, one desktop notification if anything is
+# missing. One redirect silences all sixty check lines without touching them,
+# and silence on a healthy machine is the whole anti-fatigue strategy.
+NOTIFY=0
+[[ ${1-} == --notify ]] && { NOTIFY=1; exec >/dev/null; }
+
 PASS=0
 FAIL=0
+# The toast's payload. bad() keeps the ANSI in the format string, never in "$*",
+# so a label can never carry escape bytes into a notification.
+MISSES=()
 ok()   { printf '  \033[32mok\033[0m   %s\n' "$*"; PASS=$((PASS+1)); }
-bad()  { printf '  \033[31mMISS\033[0m %s\n' "$*"; FAIL=$((FAIL+1)); }
+bad()  { printf '  \033[31mMISS\033[0m %s\n' "$*"; FAIL=$((FAIL+1)); MISSES+=("$*"); }
 have() { [[ -x $HOME/.local/bin/$1 ]] && ok "~/.local/bin/$1" || bad "~/.local/bin/$1"; }
 SKIP=0
 # Off this laptop there is no macsmc battery and no Touch Bar panel, and CI
@@ -16,7 +25,7 @@ SKIP=0
 skip() { printf '  \033[33mskip\033[0m %s\n' "$*"; SKIP=$((SKIP+1)); }
 
 echo "binaries"
-for b in macarchy-dfr omarchy-als omarchy-battery-limit omarchy-dock \
+for b in macarchy-dfr macarchy-doctor omarchy-als omarchy-battery-limit omarchy-dock \
          omarchy-dock-theme omarchy-pinch omarchy-zoom omarchy-gtk-settings \
          omarchy-auto-appearance omarchy-aquarium omarchy-aquarium-toggle \
          omarchy-aquarium-notify; do
@@ -34,8 +43,28 @@ echo "system pieces"
 	&& ok "tiny-dfr masked" || bad "tiny-dfr not masked (it fights macarchy-dfr for the panel)"
 systemctl --user is-enabled -q macarchy-dfr.service 2>/dev/null \
 	&& ok "macarchy-dfr unit enabled" || bad "macarchy-dfr unit enabled (macarchy-dfr/install.sh)"
-systemctl --user is-active -q omarchy-auto-appearance.timer 2>/dev/null \
-	&& ok "auto-appearance timer" || bad "auto-appearance timer"
+# omarchy-mac/install.sh:22 — "Auto appearance is on exactly when this timer is
+# enabled, and the Control Center flips it." A disabled timer is a preference;
+# only a missing unit file is a broken install. A login toast that fires on a
+# deliberate setting is muted within a week.
+if [[ -e $HOME/.config/systemd/user/omarchy-auto-appearance.timer ]]; then
+	systemctl --user is-active -q omarchy-auto-appearance.timer 2>/dev/null \
+		&& ok "auto-appearance timer" || ok "auto-appearance timer (off — your choice)"
+else
+	bad "auto-appearance timer unit (omarchy-mac/install.sh)"
+fi
+# Whatever systemd already knows is broken. The sed is load-bearing: a notifier
+# instance that hit its start limit is itself a failed unit, and reporting
+# macarchy-failed@macarchy-dfr.service would make the doctor talk about its own
+# alarm instead of the daemon.
+f=$(systemctl --user --failed --no-legend --plain 2>/dev/null | awk '{print $1}' \
+	| sed 's/^macarchy-failed@//' | sort -u | tr '\n' ' ')
+[[ -z ${f// } ]] && ok "no failed user units" || bad "failed user units: $f"
+# A muted check is worse than none, so the doctor checks that it can speak.
+[[ -e $HOME/.config/systemd/user/macarchy-failed@.service ]] \
+	&& ok "failure notifier" || bad "failure notifier (macarchy-install/install.sh)"
+systemctl --user is-enabled -q macarchy-doctor.service 2>/dev/null \
+	&& ok "login self-check enabled" || bad "login self-check (macarchy-install/install.sh)"
 b=/sys/class/power_supply/macsmc-battery/charge_control_end_threshold
 if [[ -n ${MACARCHY_NO_HARDWARE:-} ]]; then
 	skip "charge threshold (${MACARCHY_NO_HARDWARE})"
@@ -65,15 +94,51 @@ done
 [[ -x $HOME/.config/omarchy/hooks/theme-set.d/aquarium-theme ]] \
 	&& ok "aquarium theme hook" || bad "aquarium theme hook"
 
-if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+# WAYLAND_DISPLAY, not HYPRLAND_INSTANCE_SIGNATURE, matching what
+# /usr/lib/systemd/user/omarchy-crash-watch.service already conditions on. uwsm
+# does export both into the user manager, so either works today — but this block
+# is the half of the doctor that catches a daemon Hyprland (not systemd) starts,
+# and it must not go silently missing over an env var it does not need.
+if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
 	echo "running now"
 	systemctl --user is-active -q macarchy-dfr.service && ok "macarchy-dfr" \
 		|| bad "macarchy-dfr not running (journalctl --user -u macarchy-dfr)"
 	pgrep -f "omarchy-als daemon" >/dev/null && ok "omarchy-als"   || bad "omarchy-als not running"
 	pgrep -f "omarchy-pinch"      >/dev/null && ok "omarchy-pinch" || bad "omarchy-pinch not running"
-	omarchy-aquarium-toggle status >/dev/null 2>&1 && ok "aquarium" || bad "aquarium not running (SUPER+ALT+A, or it was left off)"
+	# The tank remembers off across reboots (omarchy-aquarium-toggle:30, an
+	# unwritten state means on). Off on purpose is not a fault.
+	aq=$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-aquarium/enabled" 2>/dev/null || echo on)
+	if [[ $aq == off ]]; then
+		ok "aquarium off (your choice)"
+	elif omarchy-aquarium-toggle status >/dev/null 2>&1; then
+		ok "aquarium"
+	else
+		bad "aquarium not running (SUPER+ALT+A)"
+	fi
 else
 	skip "running-now checks (no Hyprland session)"
+fi
+
+if (( NOTIFY )); then
+	# A watchdog that can itself fail is one more silent failure: this unit has
+	# no OnFailure and always exits 0.
+	(( FAIL )) || exit 0
+	# graphical-session.target is reached before the shell has claimed
+	# org.freedesktop.Notifications; upstream learned this the hard way.
+	command -v omarchy-notification-wait >/dev/null && omarchy-notification-wait >/dev/null 2>&1
+	body=$(printf '%s\n' "${MISSES[@]}" | head -3)
+	if command -v omarchy-notification-send >/dev/null; then
+		# --exec last, and as separate words: the shell runs the argv as-is, so
+		# clicking opens the full doctor in a floating terminal. Sent through
+		# omarchy-notification-send, not notify-send, to keep the omarchy-action
+		# app name the shell's do-not-disturb bypass allows.
+		omarchy-notification-send -u normal -g '󰀪' \
+			"macarchy: $FAIL check(s) failing" "$body" \
+			--exec omarchy-launch-floating-terminal-with-presentation macarchy-doctor
+	elif command -v notify-send >/dev/null; then
+		notify-send -u normal -a macarchy "macarchy: $FAIL check(s) failing" "$body"
+	fi
+	exit 0
 fi
 
 printf '\n%d ok, %d missing, %d skipped\n' "$PASS" "$FAIL" "$SKIP"

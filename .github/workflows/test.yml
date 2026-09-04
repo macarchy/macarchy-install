@@ -1,0 +1,43 @@
+name: tests
+
+# This repo had release-please and nothing else, so install.sh, boot.sh and
+# doctor.sh had never been bash -n'd anywhere -- and doctor.sh is now unattended
+# runtime code with an exit-code contract, run at every login. The suite is
+# hermetic (temp HOME plus PATH stubs), so a plain runner is enough.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell suites
+        # test_*.sh, not *.sh: a suite here is hermetic by convention, and the
+        # glob must never pick up a harness that installs into /etc.
+        run: |
+          fails=0
+          for t in tests/test_*.sh; do
+            echo "== $t"
+            bash "$t" || fails=$((fails + 1))
+          done
+          exit $fails
+
+      - name: Shell syntax
+        # One bash -n per file: `bash -n a.sh b.sh` parses only a.sh and passes
+        # the rest as positional arguments, so a broken boot.sh would sail past.
+        run: |
+          for f in install.sh boot.sh doctor.sh; do bash -n "$f"; done
+        shell: bash
