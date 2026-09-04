@@ -14,7 +14,7 @@ StartLimitBurst=2
 [Service]
 Type=oneshot
 # ponytail: ceiling -- systemd's own ExecStart expansion. $(...) survives here
-# (macarchy-touchbar-failed.service was the working precedent), but ${VAR:-x} does
+# (macarchy-dfr-failed.service was the working precedent), but ${VAR:-x} does
 # not, and %s/%Y are specifiers. Do not "simplify" this into shell variables.
 # %i, never %I: OnFailure=...@%n.service makes the instance the real unit name,
 # which is what journalctl -u expects; %I unescapes and could emit a quote that

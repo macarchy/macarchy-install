@@ -32,9 +32,15 @@ eval "$(sed -n '/^migrate_legacy() {$/,/^}$/p' install.sh)"
 UD="$HOME/.config/systemd/user"
 mkdir -p "$UD/graphical-session.target.wants" "$HOME/.local/bin/__pycache__" \
 	"$HOME/.local/state/macarchy-dfr" "$HOME/.local/state/omarchy-als" \
+	"$HOME/.config/omarchy-als" \
 	"$HOME/.config/macarchy-dfr" "$HOME/.config/omarchy-dfr" "$HOME/.config/hypr" \
 	"$HOME/Work/omarchy-mac" "$HOME/Work/macarchy-dfr" \
 	"$HOME/.config/omarchy/hooks/theme-set.d" "$HOME/.config/omarchy-aquarium/hooks"
+# A checkout counts only if it can reinstall: the gate tests for an executable
+# install.sh, not for a directory, so an interrupted clone cannot open it.
+for r in omarchy-mac macarchy-dfr; do
+	printf '#!/bin/bash\n' >"$HOME/Work/$r/install.sh"; chmod +x "$HOME/Work/$r/install.sh"
+done
 touch "$HOME/.config/omarchy/hooks/theme-set.d/omarchy-bar-contrast" \
 	"$HOME/.config/omarchy/hooks/theme-set.d/omarchy-dock-theme" \
 	"$HOME/.config/omarchy/hooks/theme-set.d/macarchy-bar-contrast" \
@@ -64,6 +70,7 @@ check "config moved"              [ -d "$HOME/.config/macarchy-touchbar" ]
 check "older config backed up"    [ -d "$HOME/.config/omarchy-dfr.bak" ]
 check "older config not clobbering" [ ! -e "$HOME/.config/omarchy-dfr" ]
 check "state moved"               [ -d "$HOME/.local/state/macarchy-touchbar" ]
+check "als config moved"           [ -d "$HOME/.config/macarchy-als" ]
 check "als state moved"           [ -d "$HOME/.local/state/macarchy-als" ]
 check "stale log gone"            [ ! -e "$HOME/.local/state/omarchy-dfr.log" ]
 check "stale device json gone"    [ ! -e "$HOME/.local/state/omarchy-dfr-device.json" ]
@@ -99,5 +106,12 @@ out=$(migrate_legacy)
 check "gate keeps binaries"       [ -e "$HOME/.local/bin/omarchy-dock" ]
 check "gate keeps units"          [ -e "$UD/macarchy-dfr.service" ]
 check "gate says why"             grep -q 'no macarchy-core/macarchy-touchbar checkout' <<<"$out"
+
+# An interrupted `git clone` leaves the target directory behind, empty. That is
+# the state the gate exists for, so a bare directory must not satisfy it.
+mkdir -p "$HOME/Work/macarchy-touchbar"
+out=$(migrate_legacy)
+check "empty checkout keeps binaries" [ -e "$HOME/.local/bin/omarchy-dock" ]
+check "empty checkout keeps units"    [ -e "$UD/macarchy-dfr.service" ]
 
 exit $((fails > 0))

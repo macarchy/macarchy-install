@@ -64,7 +64,8 @@ migrate_legacy() {
 
 	# --- working copies, before anything is destroyed. The repo loop below only
 	# knows the new names; an upgrading machine has the old ones checked out.
-	for pair in "omarchy-mac macarchy-core" "macarchy-dfr macarchy-touchbar"; do
+	for pair in "omarchy-mac macarchy-core" "macarchy-dfr macarchy-touchbar" \
+	            "omarchy-dfr macarchy-touchbar"; do
 		read -r old new <<<"$pair"
 		[[ -d $WD/$old && ! -e $WD/$new ]] || continue
 		if mv "$WD/$old" "$WD/$new"; then
@@ -76,15 +77,22 @@ migrate_legacy() {
 			warn "checkout: could not move $WD/$old to $WD/$new"; touched=1
 		fi
 	done
-	for old in omarchy-mac macarchy-dfr; do
+	for old in omarchy-mac macarchy-dfr omarchy-dfr; do
 		[[ -d $WD/$old ]] || continue
 		advise "left $WD/$old: the new name is already taken"; touched=1
+	done
+	# Separate pass: an interrupted run can land the mv and miss the repoint.
+	for new in macarchy-core macarchy-touchbar; do
+		[[ -d $WD/$new/.git ]] || continue
+		[[ $(git -C "$WD/$new" remote get-url origin 2>/dev/null) == "$GHURL/$new" ]] && continue
+		git -C "$WD/$new" remote set-url origin "$GHURL/$new" 2>/dev/null \
+			&& { note "$new: origin -> $GHURL/$new"; touched=1; }
 	done
 
 	# The gate. Everything past this point removes or rewrites something the new
 	# checkouts are expected to reinstall, so it waits until they exist. On a
 	# fresh machine that is the second run; nothing is lost by waiting.
-	if [[ ! -d $WD/macarchy-core || ! -d $WD/macarchy-touchbar ]]; then
+	if [[ ! -x $WD/macarchy-core/install.sh || ! -x $WD/macarchy-touchbar/install.sh ]]; then
 		advise "no macarchy-core/macarchy-touchbar checkout in $WD yet; leaving the old names alone until there is something to reinstall from (re-run this script)"
 		return
 	fi
@@ -142,6 +150,12 @@ migrate_legacy() {
 	if [[ -d $ST/omarchy-als && ! -e $ST/macarchy-als ]]; then
 		mv "$ST/omarchy-als" "$ST/macarchy-als" \
 			&& { note "state: omarchy-als -> macarchy-als"; touched=1; }
+	fi
+	if [[ -d $CFG/omarchy-als && ! -e $CFG/macarchy-als ]]; then
+		mv "$CFG/omarchy-als" "$CFG/macarchy-als" \
+			&& { note "config: omarchy-als -> macarchy-als"; touched=1; }
+	elif [[ -d $CFG/omarchy-als ]]; then
+		advise "left $CFG/omarchy-als: $CFG/macarchy-als already exists"; touched=1
 	fi
 
 	# --- binaries. ~/.local/bin is on PATH ahead of nothing in particular, so a
