@@ -45,6 +45,13 @@ note "aarch64, kernel $(uname -r)"
 # old binaries keep answering on PATH and the old config keeps being read, so
 # they have to go BEFORE anything new is installed.
 #
+# Order matters, and it is not the obvious one: the working copies are renamed
+# FIRST, then nothing is removed at all unless both new checkouts are on disk.
+# Removing the installed binaries while $MACARCHY_DIR still only holds the old
+# checkout names would send the repo loop below to `git clone`, and one failed
+# clone would leave the machine with the Touch Bar, ALS, dock and the rest
+# deleted and nothing to reinstall them from.
+#
 # Same contract as the rest of this script: every step converges or says why it
 # skipped, and a second run finds nothing left to do.
 migrate_legacy() {
@@ -52,13 +59,41 @@ migrate_legacy() {
 	local UD="$HOME/.config/systemd/user"
 	local CFG="$HOME/.config" ST="$HOME/.local/state" BIN="$HOME/.local/bin"
 	local u l f b lua before after touched=0 reload=0
+	local WD="${MACARCHY_DIR:-$HOME/Work}" GHURL="${GH:-https://github.com/macarchy}"
+	local pair old new
+
+	# --- working copies, before anything is destroyed. The repo loop below only
+	# knows the new names; an upgrading machine has the old ones checked out.
+	for pair in "omarchy-mac macarchy-core" "macarchy-dfr macarchy-touchbar"; do
+		read -r old new <<<"$pair"
+		[[ -d $WD/$old && ! -e $WD/$new ]] || continue
+		if mv "$WD/$old" "$WD/$new"; then
+			note "checkout: $old -> $new"; touched=1
+			[[ -d $WD/$new/.git ]] \
+				&& git -C "$WD/$new" remote set-url origin "$GHURL/$new" 2>/dev/null \
+				&& note "$new: origin -> $GHURL/$new"
+		else
+			warn "checkout: could not move $WD/$old to $WD/$new"; touched=1
+		fi
+	done
+	for old in omarchy-mac macarchy-dfr; do
+		[[ -d $WD/$old ]] || continue
+		advise "left $WD/$old: the new name is already taken"; touched=1
+	done
+
+	# The gate. Everything past this point removes or rewrites something the new
+	# checkouts are expected to reinstall, so it waits until they exist. On a
+	# fresh machine that is the second run; nothing is lost by waiting.
+	if [[ ! -d $WD/macarchy-core || ! -d $WD/macarchy-touchbar ]]; then
+		advise "no macarchy-core/macarchy-touchbar checkout in $WD yet; leaving the old names alone until there is something to reinstall from (re-run this script)"
+		return
+	fi
 
 	# --- user units. The .wants/ symlink outlives `disable` when the unit file
 	# went away first, and a dangling one makes daemon-reload complain forever.
 	for u in macarchy-dfr.service \
 	         omarchy-auto-appearance.service omarchy-auto-appearance.timer \
-	         omarchy-bar-contrast.service omarchy-bar-contrast.timer \
-	         macos-dynamic-wallpaper.service macos-dynamic-wallpaper.timer; do
+	         omarchy-bar-contrast.service omarchy-bar-contrast.timer; do
 		if [[ -e $UD/$u ]]; then
 			systemctl --user disable --now "$u" >/dev/null 2>&1
 			rm -f "$UD/$u" && note "removed old unit $u" && reload=1
@@ -77,7 +112,7 @@ migrate_legacy() {
 	# it; when both survived, the newer wins and the older is kept aside.
 	if [[ -d $CFG/macarchy-touchbar ]]; then
 		[[ -d $CFG/macarchy-dfr ]] \
-			&& advise "left ~/.config/macarchy-dfr: ~/.config/macarchy-touchbar already exists"
+			&& { advise "left ~/.config/macarchy-dfr: ~/.config/macarchy-touchbar already exists"; touched=1; }
 	elif [[ -d $CFG/macarchy-dfr ]]; then
 		mv "$CFG/macarchy-dfr" "$CFG/macarchy-touchbar" \
 			&& { note "config: macarchy-dfr -> macarchy-touchbar"; touched=1; }
@@ -87,7 +122,7 @@ migrate_legacy() {
 	fi
 	if [[ -d $CFG/omarchy-dfr ]]; then
 		if [[ -e $CFG/omarchy-dfr.bak ]]; then
-			advise "left ~/.config/omarchy-dfr: ~/.config/omarchy-dfr.bak is already taken"
+			advise "left ~/.config/omarchy-dfr: ~/.config/omarchy-dfr.bak is already taken"; touched=1
 		else
 			mv "$CFG/omarchy-dfr" "$CFG/omarchy-dfr.bak" \
 				&& { note "config: kept the newer copy, backed the older up as omarchy-dfr.bak"; touched=1; }
@@ -99,7 +134,7 @@ migrate_legacy() {
 		mv "$ST/macarchy-dfr" "$ST/macarchy-touchbar" \
 			&& { note "state: macarchy-dfr -> macarchy-touchbar"; touched=1; }
 	elif [[ -d $ST/macarchy-dfr ]]; then
-		advise "left ~/.local/state/macarchy-dfr: ~/.local/state/macarchy-touchbar already exists"
+		advise "left ~/.local/state/macarchy-dfr: ~/.local/state/macarchy-touchbar already exists"; touched=1
 	fi
 	for f in "$ST/omarchy-dfr.log" "$ST/omarchy-dfr-device.json"; do
 		[[ -e $f ]] && rm -f "$f" && { note "removed stale ${f#"$HOME"/}"; touched=1; }
@@ -114,7 +149,7 @@ migrate_legacy() {
 	for b in macarchy-dfr omarchy-als omarchy-battery-limit omarchy-bar-contrast \
 	         omarchy-auto-appearance omarchy-dock omarchy-dock-theme \
 	         omarchy-gtk-settings omarchy-locate omarchy-pinch omarchy-sun \
-	         omarchy-zoom macos-dynamic-wallpaper; do
+	         omarchy-zoom; do
 		if [[ -e $BIN/$b || -L $BIN/$b ]]; then
 			rm -f "$BIN/$b" && { note "removed old ~/.local/bin/$b"; touched=1; }
 		fi
@@ -122,13 +157,30 @@ migrate_legacy() {
 	done
 	rmdir "$BIN/__pycache__" 2>/dev/null
 
+	# --- installed hooks named after the binaries that just left. Both hook
+	# directories are dispatched by scanning them, so an old-named leftover is
+	# not shadowed by its new-named copy: BOTH run, and the old one calls a
+	# command that no longer exists.
+	for f in "$CFG/omarchy/hooks/theme-set.d/omarchy-bar-contrast" \
+	         "$CFG/omarchy/hooks/theme-set.d/omarchy-dock-theme" \
+	         "$CFG/omarchy-aquarium/hooks/omarchy-bar-contrast"; do
+		[[ -e $f ]] || continue
+		if rm -f "$f"; then
+			note "removed old hook ${f#"$HOME"/}"; touched=1
+		else
+			advise "old hook $f is still there; remove it by hand"; touched=1
+		fi
+	done
+
 	# --- root-owned files. Not worth a sudo prompt of its own; say what to run.
-	for f in /etc/udev/rules.d/70-macarchy-dfr.rules /etc/modules-load.d/macarchy-dfr.conf; do
+	# ($MACARCHY_ROOT is a test seam onto a temp tree; empty on a real machine.)
+	for f in "${MACARCHY_ROOT:-}/etc/udev/rules.d/70-macarchy-dfr.rules" \
+	         "${MACARCHY_ROOT:-}/etc/modules-load.d/macarchy-dfr.conf"; do
 		[[ -e $f ]] || continue
 		if rm -f "$f" 2>/dev/null; then
 			note "removed $f"; touched=1
 		else
-			advise "old $f is still there; remove it with: sudo rm -f $f"
+			advise "old $f is still there; remove it with: sudo rm -f $f"; touched=1
 		fi
 	done
 
@@ -141,7 +193,6 @@ migrate_legacy() {
 		sed -i -E \
 			-e 's/\b(macarchy|omarchy)-dfr\b/macarchy-touchbar/g' \
 			-e 's/\bomarchy-(dock-theme|dock|bar-contrast|battery-limit|auto-appearance|gtk-settings|als|locate|pinch|sun|zoom)\b/macarchy-\1/g' \
-			-e 's/\bmacos-dynamic-wallpaper\b/macarchy-dynamic-wallpaper/g' \
 			"$lua"
 		after=$(md5sum <"$lua")
 		[[ $before == "$after" ]] || { note "$(basename "$lua"): renamed the old commands in place"; touched=1; }

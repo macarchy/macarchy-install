@@ -45,14 +45,27 @@ intended workflow.
 first on `PATH`, so a future upstream addition would have silently shadowed
 ours.
 
-`install.sh` handles that for you, before it installs anything: the old user
-units are stopped, disabled and removed (enablement symlinks included),
-config and state move to their new directories, the stale binaries leave
-`~/.local/bin`, and the old command names in
+`install.sh` handles that for you, before it installs anything — but it is a
+migration, not a cleanup pass, so it moves before it deletes. First the working
+copies: `~/Work/omarchy-mac` and `~/Work/macarchy-dfr` are renamed to
+`macarchy-core` and `macarchy-touchbar` and their `origin` is repointed, because
+everything below is reinstalled from those checkouts. **Nothing is removed at
+all until both of them are on disk** — otherwise a failed `git clone` would
+leave you with the Touch Bar, the dock and the rest deleted and nothing to put
+them back. If they are not there yet, the step says so and defers to the next
+run.
+
+Once they are: the old user units are stopped, disabled and removed (enablement
+symlinks included), config and state move to their new directories, the stale
+binaries leave `~/.local/bin` along with the old-named theme-set and aquarium
+hooks that called them, and the old command names in
 `~/.config/hypr/{bindings,autostart}.lua` are renamed **in place** so nothing
 gets wired twice. Every step says what it did; on a machine that never saw the
 old names it prints one line and moves on. Root-owned leftovers under `/etc`
 are reported with the `sudo rm` to run, never removed behind your back.
+
+Only the macarchy names move. `macos-dynamic-wallpaper` is not one of ours — no
+package and no repo here owns it — so it is left strictly alone.
 
 ## Doctor
 
