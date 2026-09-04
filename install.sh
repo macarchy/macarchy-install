@@ -15,7 +15,8 @@ cd "$(dirname "$0")"
 
 MACARCHY_DIR="${MACARCHY_DIR:-$HOME/Work}"
 GH=https://github.com/macarchy
-REPOS=(macarchy-core macarchy-touchbar omarchy-aquarium apple-glass apple-glass-light)
+REPOS=(macarchy-core macarchy-touchbar macos-dynamic-wallpaper omarchy-aquarium
+       apple-glass apple-glass-light)
 
 FAILURES=0
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -268,6 +269,18 @@ if [[ -x $MACARCHY_DIR/macarchy-touchbar/install.sh ]]; then
 	(cd "$MACARCHY_DIR/macarchy-touchbar" && ./install.sh) || warn "macarchy-touchbar install failed"
 else
 	warn "macarchy-touchbar/install.sh missing"
+fi
+
+# ------------------------------------------------------ dynamic wallpaper
+
+# Ordered before the themes on purpose: its installer only seeds a config when
+# there is none, and the wallpapers it names are the ones apple-glass ships.
+say "Installing macos-dynamic-wallpaper (time-of-day backgrounds)"
+if [[ -x $MACARCHY_DIR/macos-dynamic-wallpaper/install.sh ]]; then
+	(cd "$MACARCHY_DIR/macos-dynamic-wallpaper" && ./install.sh) \
+		|| warn "macos-dynamic-wallpaper install failed"
+else
+	warn "macos-dynamic-wallpaper/install.sh missing"
 fi
 
 # -------------------------------------------------------------- aquarium

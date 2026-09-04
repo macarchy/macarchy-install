@@ -16,6 +16,7 @@ Or, with the repo already cloned:
 |---|---|---|
 | [macarchy-core](https://github.com/macarchy/macarchy-core) | `install.sh --udev` | Ambient-light auto-brightness, 80% battery charge limit + udev rule, macOS dock, 4-finger pinch gestures, CTRL+scroll screen zoom, Cmd-key grammar, app switcher, light/dark auto-appearance timer |
 | [macarchy-touchbar](https://github.com/macarchy/macarchy-touchbar) | `install.sh` | The Touch Bar, drawn by us: a systemd **user** service that owns the panel over DRM and its touch surface over evdev, with tiny-dfr masked out of the way |
+| [macos-dynamic-wallpaper](https://github.com/macarchy/macos-dynamic-wallpaper) | `install.sh` | The macOS dynamic desktop: four wallpapers a day, following the real sun at your coordinates, on a five-minute timer |
 | [omarchy-aquarium](https://github.com/macarchy/omarchy-aquarium) | `make install` | Animated GLSL underwater background (SUPER+ALT+A), theme-set hook, notification startle watcher |
 | [apple-glass](https://github.com/macarchy/apple-glass) / [-light](https://github.com/macarchy/apple-glass-light) | rsync into `~/.config/omarchy/themes` | The glass themes, tuned against the aquarium |
 | Hyprland wiring | guarded appends | Aquarium bind, zoom binds, daemon autostarts in `~/.config/hypr/{bindings,autostart}.lua` (no Touch Bar binds: macarchy-touchbar runs its own commands) |
@@ -64,8 +65,11 @@ gets wired twice. Every step says what it did; on a machine that never saw the
 old names it prints one line and moves on. Root-owned leftovers under `/etc`
 are reported with the `sudo rm` to run, never removed behind your back.
 
-Only the macarchy names move. `macos-dynamic-wallpaper` is not one of ours — no
-package and no repo here owns it — so it is left strictly alone.
+Only the macarchy names move. `macos-dynamic-wallpaper` keeps its own — it is
+named for what it is, not for what it needs, like the themes — so the migration
+leaves it strictly alone. It had no repo at all until 2026-09-04; now it has
+[one](https://github.com/macarchy/macos-dynamic-wallpaper), and this installer
+pulls it in like the rest.
 
 ## Doctor
 
