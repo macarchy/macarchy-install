@@ -25,10 +25,18 @@ for stub in omarchy-notification-send notify-send; do
 	printf '#!/bin/bash\nprintf "%%s\\n" "$(printf "%%s " "$@" | tr "\\n" " ")" >> "$SENT"\n' > "$TMP/bin/$stub"
 done
 printf '#!/bin/bash\nexit 0\n' > "$TMP/bin/omarchy-notification-wait"
-# Absent, not broken: no user manager, no compositor, no tank in a temp HOME.
-for stub in systemctl pgrep omarchy-aquarium-toggle; do
+# Absent, not broken: no compositor and no tank in a temp HOME.
+for stub in pgrep omarchy-aquarium-toggle; do
 	printf '#!/bin/bash\nexit 1\n' > "$TMP/bin/$stub"
 done
+# systemctl says "nothing is enabled or active" for everything except --failed,
+# where it reports a daemon AND that daemon's own notifier instance -- the pair
+# doctor.sh has to fold into one name.
+cat > "$TMP/bin/systemctl" <<'STUB'
+#!/bin/bash
+[[ $* == *--failed* ]] || exit 1
+printf '%s loaded failed failed d\n' macarchy-dfr.service macarchy-failed@macarchy-dfr.service.service
+STUB
 chmod +x "$TMP/bin"/*
 
 # --- (a) one clickable toast, no stdout, exit 0 -----------------------------
@@ -49,7 +57,15 @@ check "running-now ran on WAYLAND_DISPLAY" grep -q 'running now' <<<"$out"
 check "off tank counts as ok" grep -q 'ok.*aquarium off' <<<"$out"
 WAYLAND_DISPLAY=wayland-9 ./doctor.sh --notify
 check "the off tank did toast (not vacuous)" [ "$(wc -l < "$SENT")" = 2 ]
-check "aquarium off never toasts" grep -qv aquarium <<<"$(tail -1 "$SENT")"
+# The other half of the same fix: the timer being off is the Control Center
+# setting, so only a missing unit FILE is a defect.
+mkdir -p "$HOME/.config/systemd/user"
+touch "$HOME/.config/systemd/user/omarchy-auto-appearance.timer"
+check "off appearance timer counts as ok" \
+	grep -q 'ok.*auto-appearance timer (off' <<<"$(./doctor.sh)"
+# A failed notifier instance is not a second broken thing to report.
+check "notifier instance folds into its unit" \
+	[ "$(./doctor.sh | grep -o 'failed user units:.*')" = "failed user units: macarchy-dfr.service" ]
 
 # --- (c) the human-facing contract did not drift ----------------------------
 out=$(./doctor.sh); rc=$?

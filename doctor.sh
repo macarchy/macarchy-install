@@ -54,12 +54,14 @@ else
 	bad "auto-appearance timer unit (omarchy-mac/install.sh)"
 fi
 # Whatever systemd already knows is broken. The sed is load-bearing: a notifier
-# instance that hit its start limit is itself a failed unit, and reporting
-# macarchy-failed@macarchy-dfr.service would make the doctor talk about its own
-# alarm instead of the daemon.
+# instance that hit its start limit is itself a failed unit, and it must fold
+# back onto the unit it is about so sort -u shows the daemon once instead of
+# once as itself and once as its own alarm. OnFailure=...@%n.service makes the
+# instance the FULL unit name, so the unit is macarchy-failed@x.service.service
+# -- the trailing .service has to come off too or the fold never matches.
 f=$(systemctl --user --failed --no-legend --plain 2>/dev/null | awk '{print $1}' \
-	| sed 's/^macarchy-failed@//' | sort -u | tr '\n' ' ')
-[[ -z ${f// } ]] && ok "no failed user units" || bad "failed user units: $f"
+	| sed 's/^macarchy-failed@\(.*\)\.service$/\1/' | sort -u | paste -sd' ' -)
+[[ -z $f ]] && ok "no failed user units" || bad "failed user units: $f"
 # A muted check is worse than none, so the doctor checks that it can speak.
 [[ -e $HOME/.config/systemd/user/macarchy-failed@.service ]] \
 	&& ok "failure notifier" || bad "failure notifier (macarchy-install/install.sh)"
