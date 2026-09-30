@@ -1,3 +1,5 @@
+![macarchy-install banner](.github/banner.png)
+
 # macarchy-install
 
 One command from a fresh [Omarchy](https://omarchy.org) install on
